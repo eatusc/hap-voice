@@ -1,14 +1,18 @@
 import { config } from "../config"
-import { getSettings } from "../settings"
+import { getSettings, type AppSettings } from "../settings"
 import { resamplePcm16 } from "../audio/mulaw"
 
 // ElevenLabs — premium, paid. Wired up as an optional upgrade. Requests raw
 // PCM at 16 kHz and resamples to 8 kHz to match the rest of the pipeline. Voice,
 // model, and delivery come from live settings; the API key stays in .env.
-export async function synthesizeElevenLabs(text: string): Promise<Int16Array> {
+// `override` lets the preview endpoint synthesize unsaved settings.
+export async function synthesizeElevenLabs(
+  text: string,
+  override: Partial<AppSettings> = {},
+): Promise<Int16Array> {
   if (!config.tts.elevenLabsKey) throw new Error("ELEVENLABS_API_KEY not set")
 
-  const s = await getSettings()
+  const s = { ...(await getSettings()), ...override }
   const url = `https://api.elevenlabs.io/v1/text-to-speech/${s.elevenLabsVoiceId}?output_format=pcm_16000`
   const res = await fetch(url, {
     method: "POST",

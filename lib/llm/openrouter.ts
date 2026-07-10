@@ -1,5 +1,5 @@
 import { config } from "../config"
-import { getSettings } from "../settings"
+import { getSettings, type AppSettings } from "../settings"
 import { getKnowledge } from "../knowledge"
 
 export interface ChatMessage {
@@ -9,11 +9,11 @@ export interface ChatMessage {
 
 async function chatCompletion(
   messages: ChatMessage[],
-  opts: { json?: boolean; maxTokens?: number; temperature?: number } = {},
+  opts: { json?: boolean; maxTokens?: number; temperature?: number; model?: string } = {},
 ): Promise<string> {
   if (!config.llm.apiKey) throw new Error("OPENROUTER_API_KEY not set")
 
-  const { llmModel } = await getSettings()
+  const model = opts.model || (await getSettings()).llmModel
   const res = await fetch(`${config.llm.baseUrl}/chat/completions`, {
     method: "POST",
     headers: {
@@ -23,10 +23,13 @@ async function chatCompletion(
       "X-Title": "hap-voice",
     },
     body: JSON.stringify({
-      model: llmModel,
+      model,
       messages,
       temperature: opts.temperature ?? 0.5,
       max_tokens: opts.maxTokens ?? 200,
+      // Keep reasoning/thinking OFF — reasoning models add pauses callers notice.
+      // Ignored by models that don't support it.
+      reasoning: { enabled: false },
       ...(opts.json ? { response_format: { type: "json_object" } } : {}),
     }),
   })
@@ -41,8 +44,8 @@ async function chatCompletion(
 
 // ─── Live conversation ──────────────────────────────────────────────────────
 
-export async function systemPrompt(): Promise<ChatMessage> {
-  const biz = (await getSettings()).businessName
+export async function systemPrompt(override: Partial<AppSettings> = {}): Promise<ChatMessage> {
+  const biz = { ...(await getSettings()), ...override }.businessName
   const kb = getKnowledge()
 
   const lines = [
@@ -66,8 +69,15 @@ export async function systemPrompt(): Promise<ChatMessage> {
 }
 
 /** Generate the assistant's spoken reply given the conversation so far. */
-export async function generateReply(history: ChatMessage[]): Promise<string> {
-  return chatCompletion([await systemPrompt(), ...history], { maxTokens: 120, temperature: 0.6 })
+export async function generateReply(
+  history: ChatMessage[],
+  override: Partial<AppSettings> = {},
+): Promise<string> {
+  return chatCompletion([await systemPrompt(override), ...history], {
+    maxTokens: 120,
+    temperature: 0.6,
+    model: override.llmModel,
+  })
 }
 
 // ─── Post-call analysis ─────────────────────────────────────────────────────
