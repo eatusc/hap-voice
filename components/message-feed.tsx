@@ -13,10 +13,11 @@ export function MessageFeed({ initial }: { initial: Message[] }) {
     const t = setInterval(async () => {
       try {
         const res = await fetch("/api/messages")
+        if (!res.ok) return
         const data = await res.json()
-        setMessages(data.messages)
+        if (Array.isArray(data.messages)) setMessages(data.messages)
       } catch {
-        /* ignore */
+        /* server may be mid-restart — keep showing what we have */
       }
     }, 10000)
     return () => clearInterval(t)

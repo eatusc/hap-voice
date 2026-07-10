@@ -33,6 +33,7 @@ export const config = {
     piperVoice: env("PIPER_VOICE", "./models/en_US-lessac-medium.onnx"),
     elevenLabsKey: env("ELEVENLABS_API_KEY"),
     elevenLabsVoiceId: env("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM"),
+    elevenLabsModel: env("ELEVENLABS_MODEL", "eleven_flash_v2_5"),
   },
 
   persona: {

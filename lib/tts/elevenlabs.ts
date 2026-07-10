@@ -16,8 +16,10 @@ export async function synthesizeElevenLabs(text: string): Promise<Int16Array> {
     },
     body: JSON.stringify({
       text,
-      model_id: "eleven_turbo_v2_5",
-      voice_settings: { stability: 0.5, similarity_boost: 0.75 },
+      // flash_v2_5 = lowest latency (~75ms) and still natural; turbo_v2_5 = a bit
+      // richer but slower. Configurable via ELEVENLABS_MODEL.
+      model_id: config.tts.elevenLabsModel,
+      voice_settings: { stability: 0.4, similarity_boost: 0.75, speed: 1.05 },
     }),
   })
 
