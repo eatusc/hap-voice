@@ -1,12 +1,15 @@
 import { config } from "../config"
+import { getSettings } from "../settings"
 import { resamplePcm16 } from "../audio/mulaw"
 
 // ElevenLabs — premium, paid. Wired up as an optional upgrade. Requests raw
-// PCM at 16 kHz and resamples to 8 kHz to match the rest of the pipeline.
+// PCM at 16 kHz and resamples to 8 kHz to match the rest of the pipeline. Voice,
+// model, and delivery come from live settings; the API key stays in .env.
 export async function synthesizeElevenLabs(text: string): Promise<Int16Array> {
   if (!config.tts.elevenLabsKey) throw new Error("ELEVENLABS_API_KEY not set")
 
-  const url = `https://api.elevenlabs.io/v1/text-to-speech/${config.tts.elevenLabsVoiceId}?output_format=pcm_16000`
+  const s = await getSettings()
+  const url = `https://api.elevenlabs.io/v1/text-to-speech/${s.elevenLabsVoiceId}?output_format=pcm_16000`
   const res = await fetch(url, {
     method: "POST",
     headers: {
@@ -17,9 +20,9 @@ export async function synthesizeElevenLabs(text: string): Promise<Int16Array> {
     body: JSON.stringify({
       text,
       // flash_v2_5 = lowest latency (~75ms) and still natural; turbo_v2_5 = a bit
-      // richer but slower. Configurable via ELEVENLABS_MODEL.
-      model_id: config.tts.elevenLabsModel,
-      voice_settings: { stability: 0.4, similarity_boost: 0.75, speed: 1.05 },
+      // richer but slower. Higher stability = calmer/steadier; speed < 1 = slower.
+      model_id: s.elevenLabsModel,
+      voice_settings: { stability: s.ttsStability, similarity_boost: 0.75, speed: s.ttsSpeed },
     }),
   })
 

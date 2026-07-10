@@ -10,3 +10,9 @@ sim-out
 models/*.bin
 models/*.onnx
 models/*.onnx.json
+
+# Kokoro TTS — commit the code (server.py, sample.py), not the venv/models/samples.
+kokoro/venv
+kokoro/*.onnx
+kokoro/voices-*.bin
+kokoro/samples

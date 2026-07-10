@@ -1,4 +1,5 @@
 import { config } from "../config"
+import { getSettings } from "../settings"
 import { getKnowledge } from "../knowledge"
 
 export interface ChatMessage {
@@ -12,6 +13,7 @@ async function chatCompletion(
 ): Promise<string> {
   if (!config.llm.apiKey) throw new Error("OPENROUTER_API_KEY not set")
 
+  const { llmModel } = await getSettings()
   const res = await fetch(`${config.llm.baseUrl}/chat/completions`, {
     method: "POST",
     headers: {
@@ -21,7 +23,7 @@ async function chatCompletion(
       "X-Title": "hap-voice",
     },
     body: JSON.stringify({
-      model: config.llm.model,
+      model: llmModel,
       messages,
       temperature: opts.temperature ?? 0.5,
       max_tokens: opts.maxTokens ?? 200,
@@ -39,8 +41,8 @@ async function chatCompletion(
 
 // ─── Live conversation ──────────────────────────────────────────────────────
 
-export function systemPrompt(): ChatMessage {
-  const biz = config.persona.businessName
+export async function systemPrompt(): Promise<ChatMessage> {
+  const biz = (await getSettings()).businessName
   const kb = getKnowledge()
 
   const lines = [
@@ -65,7 +67,7 @@ export function systemPrompt(): ChatMessage {
 
 /** Generate the assistant's spoken reply given the conversation so far. */
 export async function generateReply(history: ChatMessage[]): Promise<string> {
-  return chatCompletion([systemPrompt(), ...history], { maxTokens: 120, temperature: 0.6 })
+  return chatCompletion([await systemPrompt(), ...history], { maxTokens: 120, temperature: 0.6 })
 }
 
 // ─── Post-call analysis ─────────────────────────────────────────────────────
@@ -73,6 +75,7 @@ export async function generateReply(history: ChatMessage[]): Promise<string> {
 export interface CallDetails {
   caller_name: string | null
   caller_company: string | null
+  caller_email: string | null
   reason: string | null
   callback_number: string | null
   message: string | null
@@ -86,9 +89,11 @@ export async function extractCallDetails(transcript: string): Promise<CallDetail
         role: "system",
         content:
           "Extract structured details from this phone call transcript. Return ONLY JSON with keys: " +
-          "caller_name, caller_company, reason, callback_number, message, summary. " +
+          "caller_name, caller_company, caller_email, reason, callback_number, message, summary. " +
           "Use null for anything not stated. `message` is what the caller wants passed along. " +
-          "`summary` is one sentence. Do not invent information.",
+          "`caller_email` is any email address the caller gave — normalize spoken forms " +
+          "(e.g. \"eric at gmail dot com\" -> \"eric@gmail.com\") into a valid address, lowercased; " +
+          "null if none was mentioned. `summary` is one sentence. Do not invent information.",
       },
       { role: "user", content: transcript || "(no transcript)" },
     ],
@@ -97,6 +102,7 @@ export async function extractCallDetails(transcript: string): Promise<CallDetail
   return safeJson<CallDetails>(content, {
     caller_name: null,
     caller_company: null,
+    caller_email: null,
     reason: null,
     callback_number: null,
     message: null,
@@ -142,7 +148,8 @@ export async function scoreSpam(transcript: string, fromNumber: string): Promise
     spam_reason: null,
   })
   const score = Math.max(0, Math.min(1, Number(parsed.spam_score) || 0))
-  return { spam_score: score, spam_reason: parsed.spam_reason ?? null, is_spam: score >= 0.6 }
+  const { spamThreshold } = await getSettings()
+  return { spam_score: score, spam_reason: parsed.spam_reason ?? null, is_spam: score >= spamThreshold }
 }
 
 function safeJson<T>(raw: string, fallback: T): T {

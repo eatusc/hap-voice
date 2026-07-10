@@ -1,7 +1,8 @@
 import Link from "next/link"
-import { query, type Call } from "@/lib/db"
+import { query, getAnalytics, type Call } from "@/lib/db"
 import { formatPhone, formatDuration, relativeTime } from "@/lib/format"
 import { SpamBadge } from "@/components/spam-badge"
+import { AnalyticsOverview } from "@/components/analytics-overview"
 
 export const dynamic = "force-dynamic"
 
@@ -28,8 +29,13 @@ export default async function CallsPage({
     params,
   )
 
+  // Analytics header only on the default, unfiltered view.
+  const showAnalytics = !spamOnly && !q?.trim()
+  const analytics = showAnalytics ? await getAnalytics() : null
+
   return (
     <div>
+      {analytics && <AnalyticsOverview data={analytics} />}
       <div className="flex items-center justify-between mb-5">
         <h1 className="text-lg font-semibold">
           {spamOnly ? "Potential spam" : "Recent calls"}

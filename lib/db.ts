@@ -38,6 +38,7 @@ export interface Call {
   duration_seconds: number | null
   caller_name: string | null
   caller_company: string | null
+  caller_email: string | null
   reason: string | null
   callback_number: string | null
   message: string | null
@@ -175,4 +176,52 @@ export async function countUnreadMessages(): Promise<number> {
 
 export async function markAllMessagesRead(): Promise<void> {
   await query(`UPDATE messages SET read_at = now() WHERE read_at IS NULL AND direction = 'inbound'`)
+}
+
+// ─── Analytics ──────────────────────────────────────────────────────────────
+
+export interface Analytics {
+  totalCalls: number
+  callsLast7: number
+  spamCount: number
+  avgDurationSeconds: number | null
+  totalMessages: number
+  perDay: { day: string; count: number }[]
+}
+
+export async function getAnalytics(): Promise<Analytics> {
+  const totals = await queryOne<{
+    total_calls: string
+    calls_last7: string
+    spam_count: string
+    avg_duration: string | null
+    total_messages: string
+  }>(
+    `SELECT
+       (SELECT COUNT(*) FROM calls)::text AS total_calls,
+       (SELECT COUNT(*) FROM calls WHERE started_at >= now() - interval '7 days')::text AS calls_last7,
+       (SELECT COUNT(*) FROM calls WHERE is_spam)::text AS spam_count,
+       (SELECT ROUND(AVG(duration_seconds)) FROM calls WHERE duration_seconds IS NOT NULL)::text AS avg_duration,
+       (SELECT COUNT(*) FROM messages)::text AS total_messages`,
+  )
+
+  // Calls per day for the last 14 days (zero-filled), oldest → newest.
+  const rows = await query<{ day: string; count: string }>(
+    `SELECT to_char(d.day, 'YYYY-MM-DD') AS day, COUNT(c.id)::text AS count
+       FROM generate_series(
+              (now() - interval '13 days')::date, now()::date, interval '1 day'
+            ) AS d(day)
+       LEFT JOIN calls c ON c.started_at::date = d.day
+      GROUP BY d.day
+      ORDER BY d.day ASC`,
+  )
+
+  return {
+    totalCalls: parseInt(totals?.total_calls ?? "0", 10),
+    callsLast7: parseInt(totals?.calls_last7 ?? "0", 10),
+    spamCount: parseInt(totals?.spam_count ?? "0", 10),
+    avgDurationSeconds: totals?.avg_duration ? parseInt(totals.avg_duration, 10) : null,
+    totalMessages: parseInt(totals?.total_messages ?? "0", 10),
+    perDay: rows.map((r) => ({ day: r.day, count: parseInt(r.count, 10) })),
+  }
 }

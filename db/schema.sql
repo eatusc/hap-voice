@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS calls (
   -- Extracted after the call by the LLM
   caller_name     TEXT,
   caller_company  TEXT,
+  caller_email    TEXT,
   reason          TEXT,
   callback_number TEXT,
   message         TEXT,
@@ -31,6 +32,10 @@ CREATE TABLE IF NOT EXISTS calls (
 
 CREATE INDEX IF NOT EXISTS calls_started_at_idx ON calls (started_at DESC);
 CREATE INDEX IF NOT EXISTS calls_from_number_idx ON calls (from_number);
+
+-- Migrations for existing databases (CREATE TABLE IF NOT EXISTS above won't add
+-- new columns to an already-created table).
+ALTER TABLE calls ADD COLUMN IF NOT EXISTS caller_email TEXT;
 
 CREATE TABLE IF NOT EXISTS transcript_turns (
   id        BIGSERIAL PRIMARY KEY,
@@ -68,3 +73,12 @@ CREATE TABLE IF NOT EXISTS messages (
 
 CREATE INDEX IF NOT EXISTS messages_from_idx ON messages (from_number);
 CREATE INDEX IF NOT EXISTS messages_received_idx ON messages (received_at DESC);
+
+-- Editable, live-applied settings (voice, model, persona, etc.). Overrides the
+-- .env defaults at runtime; changed from the dashboard Settings page. Secrets
+-- (API keys, ports, hosts) intentionally stay in .env, not here.
+CREATE TABLE IF NOT EXISTS app_settings (
+  key        TEXT PRIMARY KEY,
+  value      TEXT NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);

@@ -9,6 +9,7 @@ import {
   scoreSpam,
 } from "../llm/openrouter"
 import { config } from "../config"
+import { getSettings } from "../settings"
 import {
   addTurn,
   createCall,
@@ -108,7 +109,7 @@ export class CallSession {
 
     this.startedAtMs = Date.now()
     this.log("started, from", this.fromNumber)
-    await this.speak(config.persona.greeting, /* record */ true)
+    await this.speak((await getSettings()).greeting, /* record */ true)
   }
 
   private onMedia(payloadB64: string) {
@@ -251,6 +252,7 @@ export class CallSession {
         Object.assign(patch, {
           caller_name: details.caller_name,
           caller_company: details.caller_company,
+          caller_email: details.caller_email,
           reason: details.reason,
           callback_number: details.callback_number,
           message: details.message,

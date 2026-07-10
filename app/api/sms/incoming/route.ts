@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { insertMessage } from "@/lib/db"
 import { detectVerificationCode } from "@/lib/verification-code"
+import { formParams, isValidTwilioRequest } from "@/lib/telephony/validate-signature"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -15,7 +16,18 @@ function twiml(body = "") {
 // Twilio inbound SMS/MMS webhook. Stores the message and returns empty TwiML
 // (no auto-reply). Point Twilio's Messaging "A message comes in" webhook here.
 export async function POST(request: Request) {
-  const form = await request.formData()
+  let form: FormData
+  try {
+    form = await request.formData()
+  } catch {
+    return new NextResponse("Bad request", { status: 400 })
+  }
+
+  // Reject forged webhooks before storing anything.
+  if (!isValidTwilioRequest(request, "/api/sms/incoming", formParams(form))) {
+    return new NextResponse("Invalid Twilio signature", { status: 403 })
+  }
+
   const from = String(form.get("From") || "unknown")
   const to = String(form.get("To") || "")
   const body = String(form.get("Body") || "")

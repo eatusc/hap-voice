@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { config } from "@/lib/config"
 import { createCall, isBlocked } from "@/lib/db"
+import { formParams, isValidTwilioRequest } from "@/lib/telephony/validate-signature"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -16,7 +17,18 @@ function esc(s: string) {
 }
 
 export async function POST(request: Request) {
-  const form = await request.formData()
+  let form: FormData
+  try {
+    form = await request.formData()
+  } catch {
+    return new NextResponse("Bad request", { status: 400 })
+  }
+
+  // Reject forged webhooks before doing any work.
+  if (!isValidTwilioRequest(request, "/api/voice/incoming", formParams(form))) {
+    return new NextResponse("Invalid Twilio signature", { status: 403 })
+  }
+
   const from = String(form.get("From") || "unknown")
   const to = String(form.get("To") || "")
   const callSid = String(form.get("CallSid") || "")

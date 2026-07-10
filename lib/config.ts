@@ -34,6 +34,7 @@ export const config = {
     elevenLabsKey: env("ELEVENLABS_API_KEY"),
     elevenLabsVoiceId: env("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM"),
     elevenLabsModel: env("ELEVENLABS_MODEL", "eleven_flash_v2_5"),
+    kokoroUrl: env("KOKORO_URL", "http://127.0.0.1:5111"),
   },
 
   persona: {

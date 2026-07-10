@@ -39,6 +39,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 </NavLink>
                 <NavLink href="/?spam=1">Potential spam</NavLink>
                 <NavLink href="/blocked">Blocked</NavLink>
+                <NavLink href="/knowledge">Knowledge</NavLink>
+                <NavLink href="/settings">Settings</NavLink>
               </nav>
             </div>
           </header>

@@ -46,6 +46,21 @@ export default async function CallDetailPage({ params }: { params: Promise<{ id:
             <Field label="Name" value={call.caller_name} />
             <Field label="Company" value={call.caller_company} />
             <Field label="Callback" value={formatPhone(call.callback_number)} />
+            <div className="flex justify-between gap-4 py-1 text-sm">
+              <span className="text-neutral-500">Email</span>
+              <span className="text-right">
+                {call.caller_email ? (
+                  <a
+                    href={`mailto:${call.caller_email}`}
+                    className="text-emerald-400 hover:underline break-all"
+                  >
+                    {call.caller_email}
+                  </a>
+                ) : (
+                  <span className="text-neutral-200">—</span>
+                )}
+              </span>
+            </div>
             <Field label="Reason" value={call.reason} />
           </Panel>
 
