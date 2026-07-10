@@ -1,0 +1,259 @@
+import { Vad } from "../audio/vad"
+import { mulawToPcm16, pcm16ToMulaw } from "../audio/mulaw"
+import { getStt } from "../stt"
+import { getTts } from "../tts"
+import {
+  type ChatMessage,
+  generateReply,
+  extractCallDetails,
+  scoreSpam,
+} from "../llm/openrouter"
+import { config } from "../config"
+import {
+  addTurn,
+  createCall,
+  getTurns,
+  queryOne,
+  updateCall,
+  type Call,
+} from "../db"
+import {
+  clearMessage,
+  markMessage,
+  mediaMessage,
+  type TwilioInbound,
+} from "./twilio-stream"
+
+export interface Transport {
+  send(text: string): void
+}
+
+const MULAW_CHUNK = 3200 // ~400ms of 8kHz µ-law per media message
+
+export class CallSession {
+  private vad = new Vad({ sampleRate: 8000, endSilenceMs: 800 })
+  private stt = getStt()
+  private tts = getTts()
+
+  private streamSid = ""
+  private callId: number | null = null
+  private fromNumber = "unknown"
+  private startedAtMs = Date.now()
+
+  private history: ChatMessage[] = []
+  private assistantSpeaking = false
+  private currentMark = ""
+  private turnBusy = false
+  private pendingUtterance: Int16Array | null = null
+  private finalized = false
+  private responseSeq = 0
+
+  constructor(private transport: Transport) {
+    this.vad.onSpeechStart = () => this.onCallerSpeechStart()
+    this.vad.onUtterance = (pcm) => this.onUtterance(pcm)
+  }
+
+  private log(...args: any[]) {
+    console.log(`[call ${this.callId ?? "?"}]`, ...args)
+  }
+
+  // ─── Inbound message router ───────────────────────────────────────────────
+
+  async handleMessage(raw: string) {
+    let msg: TwilioInbound
+    try {
+      msg = JSON.parse(raw)
+    } catch {
+      return
+    }
+
+    switch (msg.event) {
+      case "start":
+        await this.onStart(msg)
+        break
+      case "media":
+        this.onMedia(msg.media.payload)
+        break
+      case "mark":
+        if (msg.mark.name === this.currentMark) this.assistantSpeaking = false
+        break
+      case "stop":
+        await this.finalize()
+        break
+    }
+  }
+
+  private async onStart(msg: Extract<TwilioInbound, { event: "start" }>) {
+    this.streamSid = msg.start.streamSid
+    const params = msg.start.customParameters ?? {}
+    this.fromNumber = params.from ?? "unknown"
+
+    if (params.callId) {
+      const existing = await queryOne<Call>(`SELECT * FROM calls WHERE id = $1`, [Number(params.callId)])
+      if (existing) {
+        this.callId = existing.id
+        this.fromNumber = existing.from_number
+      }
+    }
+    if (this.callId == null) {
+      const call = await createCall({
+        twilioCallSid: msg.start.callSid,
+        streamSid: this.streamSid,
+        fromNumber: this.fromNumber,
+      })
+      this.callId = call.id
+    } else {
+      await updateCall(this.callId, { stream_sid: this.streamSid })
+    }
+
+    this.startedAtMs = Date.now()
+    this.log("started, from", this.fromNumber)
+    await this.speak(config.persona.greeting, /* record */ true)
+  }
+
+  private onMedia(payloadB64: string) {
+    const mulaw = Buffer.from(payloadB64, "base64")
+    const pcm = mulawToPcm16(mulaw)
+    this.vad.push(pcm)
+  }
+
+  // ─── Barge-in ─────────────────────────────────────────────────────────────
+
+  private onCallerSpeechStart() {
+    if (this.assistantSpeaking) {
+      this.log("barge-in — caller interrupted")
+      this.transport.send(clearMessage(this.streamSid))
+      this.assistantSpeaking = false
+      this.currentMark = ""
+    }
+  }
+
+  // ─── Turn handling ────────────────────────────────────────────────────────
+
+  private onUtterance(pcm: Int16Array) {
+    // Serialize turns: if we're mid-turn, keep only the latest utterance.
+    if (this.turnBusy) {
+      this.pendingUtterance = pcm
+      return
+    }
+    void this.processTurn(pcm)
+  }
+
+  private async processTurn(pcm: Int16Array) {
+    this.turnBusy = true
+    try {
+      const text = (await this.stt.transcribe(pcm, 8000)).trim()
+      if (!text) {
+        this.log("empty transcription, ignoring")
+        return
+      }
+      this.log("caller:", text)
+      await this.recordTurn("caller", text)
+      this.history.push({ role: "user", content: text })
+
+      let reply: string
+      try {
+        reply = await generateReply(this.history)
+      } catch (err) {
+        this.log("LLM error:", (err as Error).message)
+        reply = "Sorry, I'm having trouble hearing you. Could you say that again?"
+      }
+      if (!reply) reply = "Could you repeat that?"
+
+      this.history.push({ role: "assistant", content: reply })
+      this.log("assistant:", reply)
+      await this.speak(reply, true)
+    } catch (err) {
+      this.log("turn error:", (err as Error).message)
+    } finally {
+      this.turnBusy = false
+      // Drain a queued utterance if the caller spoke again while we worked.
+      if (this.pendingUtterance) {
+        const next = this.pendingUtterance
+        this.pendingUtterance = null
+        void this.processTurn(next)
+      }
+    }
+  }
+
+  // ─── Speaking ─────────────────────────────────────────────────────────────
+
+  private async speak(text: string, record: boolean) {
+    if (record) await this.recordTurn("assistant", text)
+    let pcm: Int16Array
+    try {
+      pcm = await this.tts.synthesize(text)
+    } catch (err) {
+      this.log("TTS error:", (err as Error).message)
+      return
+    }
+    this.sendAudio(pcm)
+  }
+
+  private sendAudio(pcm8k: Int16Array) {
+    const mulaw = pcm16ToMulaw(pcm8k)
+    for (let off = 0; off < mulaw.length; off += MULAW_CHUNK) {
+      const chunk = mulaw.subarray(off, off + MULAW_CHUNK)
+      this.transport.send(mediaMessage(this.streamSid, chunk.toString("base64")))
+    }
+    this.currentMark = `resp-${++this.responseSeq}`
+    this.assistantSpeaking = true
+    this.transport.send(markMessage(this.streamSid, this.currentMark))
+  }
+
+  private async recordTurn(role: "caller" | "assistant", text: string) {
+    if (this.callId == null) return
+    try {
+      await addTurn(this.callId, role, text)
+    } catch (err) {
+      this.log("addTurn error:", (err as Error).message)
+    }
+  }
+
+  // ─── Finalize ─────────────────────────────────────────────────────────────
+
+  async finalize() {
+    if (this.finalized || this.callId == null) return
+    this.finalized = true
+    this.vad.flush()
+
+    const durationSeconds = Math.round((Date.now() - this.startedAtMs) / 1000)
+    this.log("ended, duration", durationSeconds, "s")
+
+    const turns = await getTurns(this.callId)
+    const transcript = turns
+      .map((t) => `${t.role === "caller" ? "Caller" : "Assistant"}: ${t.text}`)
+      .join("\n")
+
+    const patch: Partial<Call> = {
+      status: "completed",
+      ended_at: new Date().toISOString(),
+      duration_seconds: durationSeconds,
+    }
+
+    if (transcript && config.llm.apiKey) {
+      try {
+        const [details, spam] = await Promise.all([
+          extractCallDetails(transcript),
+          scoreSpam(transcript, this.fromNumber),
+        ])
+        Object.assign(patch, {
+          caller_name: details.caller_name,
+          caller_company: details.caller_company,
+          reason: details.reason,
+          callback_number: details.callback_number,
+          message: details.message,
+          summary: details.summary,
+          spam_score: spam.spam_score,
+          spam_reason: spam.spam_reason,
+          is_spam: spam.is_spam,
+        })
+      } catch (err) {
+        this.log("analysis error:", (err as Error).message)
+      }
+    }
+
+    await updateCall(this.callId, patch)
+    this.log("finalized")
+  }
+}

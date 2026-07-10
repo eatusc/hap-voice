@@ -1,0 +1,17 @@
+# Optional: an isolated Postgres for hap-voice, if you'd rather not use your
+# local Homebrew Postgres. Start with `docker compose up -d`, then set
+# DATABASE_URL=postgres://hapv:hapv@localhost:5433/hap_voice and run `npm run db:setup`.
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: hapv
+      POSTGRES_PASSWORD: hapv
+      POSTGRES_DB: hap_voice
+    ports:
+      - "5433:5432"
+    volumes:
+      - hapv_pgdata:/var/lib/postgresql/data
+
+volumes:
+  hapv_pgdata:
