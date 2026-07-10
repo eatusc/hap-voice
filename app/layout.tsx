@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 import { countUnreadMessages } from "@/lib/db"
+import { ChunkErrorReloader } from "@/components/chunk-error-reloader"
 import "./globals.css"
 
 export const metadata: Metadata = {
@@ -19,6 +20,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang="en">
       <body>
+        <ChunkErrorReloader />
         <div className="min-h-screen">
           <header className="border-b border-neutral-800 bg-neutral-900/60 backdrop-blur sticky top-0 z-10">
             <div className="mx-auto max-w-5xl px-5 h-14 flex items-center justify-between">

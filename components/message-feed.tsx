@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react"
 import type { Message } from "@/lib/db"
-import { formatPhone, relativeTime } from "@/lib/format"
+import { formatPhone } from "@/lib/format"
+import { TimeAgo } from "@/components/time-ago"
 
 export function MessageFeed({ initial }: { initial: Message[] }) {
   const [messages, setMessages] = useState(initial)
@@ -50,7 +51,7 @@ function MessageCard({ m }: { m: Message }) {
     <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-4">
       <div className="flex items-center justify-between mb-1.5">
         <div className="font-medium text-sm">{formatPhone(m.from_number)}</div>
-        <div className="text-xs text-neutral-500">{relativeTime(m.received_at)}</div>
+        <div className="text-xs text-neutral-500"><TimeAgo iso={m.received_at} /></div>
       </div>
       <p className="text-sm text-neutral-200 whitespace-pre-wrap break-words">{m.body}</p>
       {m.detected_code && <CodeChip code={m.detected_code} />}
