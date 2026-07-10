@@ -3,6 +3,7 @@ import { notFound } from "next/navigation"
 import { getTurns, isBlocked, queryOne, type Call } from "@/lib/db"
 import { formatPhone, formatDuration, formatDateTime } from "@/lib/format"
 import { SpamBadge } from "@/components/spam-badge"
+import { SpamControl } from "@/components/spam-control"
 import { BlockButton } from "@/components/block-button"
 
 export const dynamic = "force-dynamic"
@@ -33,6 +34,7 @@ export default async function CallDetailPage({ params }: { params: Promise<{ id:
         </div>
         <div className="flex items-center gap-3">
           <SpamBadge score={call.spam_score} isSpam={call.is_spam} />
+          <SpamControl callId={call.id} isSpam={call.is_spam} />
           <BlockButton number={call.from_number} reason={call.spam_reason} blocked={blocked} />
         </div>
       </div>

@@ -1,4 +1,5 @@
 import { config } from "../config"
+import { getKnowledge } from "../knowledge"
 
 export interface ChatMessage {
   role: "system" | "user" | "assistant"
@@ -40,17 +41,26 @@ async function chatCompletion(
 
 export function systemPrompt(): ChatMessage {
   const biz = config.persona.businessName
-  return {
-    role: "system",
-    content: [
-      `You are the friendly phone receptionist for ${biz}, a product consulting business.`,
-      `You are on a live phone call. Keep every reply to one or two short sentences — it will be spoken aloud.`,
-      `Your goals, in order: 1) find out who is calling and what company they're with, 2) find out why they're calling, 3) get a callback number if it's not obvious, 4) take a clear message.`,
-      `Be warm and natural. Never invent details about ${biz}'s services, pricing, or availability — if asked something specific, say you'll pass it along and someone will follow up.`,
-      `If the call is obviously a robocall, spam, or a sales pitch, stay polite, decline briefly, and wrap up.`,
-      `When you have what you need, thank them, confirm you'll pass the message along, and say goodbye.`,
-    ].join(" "),
+  const kb = getKnowledge()
+
+  const lines = [
+    `You are the friendly phone receptionist for ${biz}.`,
+    `You are on a live phone call. Keep every reply to one or two short sentences — it will be spoken aloud.`,
+    `Your goals, in order: 1) find out who is calling and what company they're with, 2) find out why they're calling, 3) get a callback number if it's not obvious, 4) take a clear message.`,
+    ``,
+    `STAY ON TOPIC. You only handle calls for ${biz}. If the caller asks about anything unrelated to ${biz} or their reason for calling (general knowledge, trivia, jokes, coding, other companies, personal opinions, etc.), politely decline in one sentence and steer back to taking their message. Do not answer off-topic questions even if you know the answer.`,
+    ``,
+    `ANSWER ONLY FROM THE KNOWLEDGE BELOW. You may answer a caller's questions about ${biz} using ONLY the facts in the knowledge base. If the answer isn't there, say you'll pass the question along and someone will follow up — never guess, never invent services, pricing, availability, or commitments.`,
+    ``,
+    `If the call is obviously a robocall, spam, or a cold sales pitch, stay polite, decline briefly, and wrap up.`,
+    `When you have what you need, thank them, confirm you'll pass the message along, and say goodbye.`,
+  ]
+
+  if (kb) {
+    lines.push(``, `── KNOWLEDGE BASE (the only facts you may state) ──`, kb)
   }
+
+  return { role: "system", content: lines.join("\n") }
 }
 
 /** Generate the assistant's spoken reply given the conversation so far. */
@@ -105,11 +115,23 @@ export async function scoreSpam(transcript: string, fromNumber: string): Promise
     [
       {
         role: "system",
-        content:
-          "You classify whether a phone call was spam / robocall / unsolicited sales. " +
-          "Return ONLY JSON: { spam_score: number 0..1, spam_reason: string|null }. " +
-          "1 = definitely spam, 0 = clearly a legitimate personal/business call. " +
-          "Signals of spam: pre-recorded feel, generic sales pitch, warranty/insurance/SEO offers, refusal to identify, urgency scams.",
+        content: [
+          "You classify whether an inbound phone call was spam / robocall / unsolicited sales.",
+          "Return ONLY JSON: { spam_score: number 0..1, spam_reason: string|null }.",
+          "",
+          "Default to LOW scores. Most calls are legitimate. A real person calling to reach",
+          "someone, leave a message, or ask about the business is NOT spam — even if the call",
+          "is short, terse, rushed, or a little rude. Brevity is not a spam signal.",
+          "",
+          "Rubric:",
+          "  0.0–0.2  Legitimate: caller wants a person, leaves a message, or asks a real question.",
+          "  0.3–0.5  Ambiguous: vague purpose, but could be real.",
+          "  0.6–0.8  Likely spam: unsolicited sales pitch, SEO/marketing offer, generic script.",
+          "  0.9–1.0  Definite spam: pre-recorded robocall, auto-warranty/insurance scam, refuses",
+          "           to identify and pushes an offer, phishing/urgency scam.",
+          "",
+          "Only score >= 0.6 when there is a clear unsolicited SALES or SCAM signal. If in doubt, score low.",
+        ].join("\n"),
       },
       { role: "user", content: `From: ${fromNumber}\n\nTranscript:\n${transcript || "(no transcript)"}` },
     ],

@@ -44,7 +44,7 @@ export class CallSession {
   private assistantSpeaking = false
   private currentMark = ""
   private turnBusy = false
-  private pendingUtterance: Int16Array | null = null
+  private pendingUtterances: Int16Array[] = []
   private finalized = false
   private responseSeq = 0
 
@@ -131,12 +131,26 @@ export class CallSession {
   // ─── Turn handling ────────────────────────────────────────────────────────
 
   private onUtterance(pcm: Int16Array) {
-    // Serialize turns: if we're mid-turn, keep only the latest utterance.
+    // Serialize turns: if we're mid-turn, buffer everything the caller says so the
+    // next turn transcribes all of it — never drop what they told us.
     if (this.turnBusy) {
-      this.pendingUtterance = pcm
+      this.pendingUtterances.push(pcm)
       return
     }
     void this.processTurn(pcm)
+  }
+
+  private drainPending(): Int16Array | null {
+    if (this.pendingUtterances.length === 0) return null
+    const total = this.pendingUtterances.reduce((n, u) => n + u.length, 0)
+    const merged = new Int16Array(total)
+    let o = 0
+    for (const u of this.pendingUtterances) {
+      merged.set(u, o)
+      o += u.length
+    }
+    this.pendingUtterances = []
+    return merged
   }
 
   private async processTurn(pcm: Int16Array) {
@@ -167,12 +181,9 @@ export class CallSession {
       this.log("turn error:", (err as Error).message)
     } finally {
       this.turnBusy = false
-      // Drain a queued utterance if the caller spoke again while we worked.
-      if (this.pendingUtterance) {
-        const next = this.pendingUtterance
-        this.pendingUtterance = null
-        void this.processTurn(next)
-      }
+      // Drain anything the caller said while we worked, as one combined turn.
+      const next = this.drainPending()
+      if (next) void this.processTurn(next)
     }
   }
 
