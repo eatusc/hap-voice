@@ -85,6 +85,11 @@ export class CallSession {
   }
 
   private async onStart(msg: Extract<TwilioInbound, { event: "start" }>) {
+    const sttPrepareStarted = Date.now()
+    const sttReady = this.stt.prepare?.().catch((err) => {
+      this.log("STT warm-up error:", (err as Error).message)
+    })
+
     this.streamSid = msg.start.streamSid
     const params = msg.start.customParameters ?? {}
     this.fromNumber = params.from ?? "unknown"
@@ -110,6 +115,10 @@ export class CallSession {
     this.startedAtMs = Date.now()
     this.log("started, from", this.fromNumber)
     await this.speak((await getSettings()).greeting, /* record */ true)
+    if (sttReady) {
+      await sttReady
+      this.log(`STT ready in ${Date.now() - sttPrepareStarted}ms`)
+    }
   }
 
   private onMedia(payloadB64: string) {
@@ -156,28 +165,34 @@ export class CallSession {
 
   private async processTurn(pcm: Int16Array) {
     this.turnBusy = true
+    const turnStarted = Date.now()
     try {
+      const sttStarted = Date.now()
       const text = (await this.stt.transcribe(pcm, 8000)).trim()
+      const sttMs = Date.now() - sttStarted
       if (!text) {
-        this.log("empty transcription, ignoring")
+        this.log(`empty transcription, ignoring (STT ${sttMs}ms)`)
         return
       }
-      this.log("caller:", text)
+      this.log(`caller (STT ${sttMs}ms):`, text)
       await this.recordTurn("caller", text)
       this.history.push({ role: "user", content: text })
 
       let reply: string
+      const llmStarted = Date.now()
       try {
         reply = await generateReply(this.history)
       } catch (err) {
         this.log("LLM error:", (err as Error).message)
         reply = "Sorry, I'm having trouble hearing you. Could you say that again?"
       }
+      const llmMs = Date.now() - llmStarted
       if (!reply) reply = "Could you repeat that?"
 
       this.history.push({ role: "assistant", content: reply })
-      this.log("assistant:", reply)
+      this.log(`assistant (LLM ${llmMs}ms):`, reply)
       await this.speak(reply, true)
+      this.log(`turn ready in ${Date.now() - turnStarted}ms`)
     } catch (err) {
       this.log("turn error:", (err as Error).message)
     } finally {
@@ -193,12 +208,14 @@ export class CallSession {
   private async speak(text: string, record: boolean) {
     if (record) await this.recordTurn("assistant", text)
     let pcm: Int16Array
+    const ttsStarted = Date.now()
     try {
       pcm = await this.tts.synthesize(text)
     } catch (err) {
       this.log("TTS error:", (err as Error).message)
       return
     }
+    this.log(`TTS synthesized in ${Date.now() - ttsStarted}ms`)
     this.sendAudio(pcm)
   }
 
