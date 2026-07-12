@@ -1,7 +1,9 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
 import type { AppSettings } from "@/lib/settings"
+import type { RetellStatus } from "@/lib/retell"
 
 interface Voice {
   id: string
@@ -36,7 +38,7 @@ const KOKORO_VOICES: { id: string; label: string }[] = [
   { id: "bm_george", label: "George — British male" },
 ]
 
-export function SettingsForm({ initial }: { initial: AppSettings }) {
+export function SettingsForm({ initial, retell }: { initial: AppSettings; retell: RetellStatus }) {
   const [s, setS] = useState<AppSettings>(initial)
   const [voices, setVoices] = useState<Voice[]>([])
   const [busy, setBusy] = useState(false)
@@ -47,6 +49,9 @@ export function SettingsForm({ initial }: { initial: AppSettings }) {
   const [testing, setTesting] = useState(false)
   const [testReply, setTestReply] = useState<{ reply: string; ms: number } | null>(null)
   const [testErr, setTestErr] = useState<string | null>(null)
+  const [provisioning, setProvisioning] = useState(false)
+  const [provisionMsg, setProvisionMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const router = useRouter()
 
   useEffect(() => {
     fetch("/api/voices")
@@ -64,10 +69,13 @@ export function SettingsForm({ initial }: { initial: AppSettings }) {
     setBusy(true)
     setSaved("idle")
     try {
+      // retellAgentId is owned by the provisioning flow, never by this form —
+      // omit it so a page loaded before provisioning can't wipe it on save.
+      const { retellAgentId: _serverOwned, ...payload } = s
       const res = await fetch("/api/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(s),
+        body: JSON.stringify(payload),
       })
       if (!res.ok) throw new Error()
       const updated = await res.json()
@@ -132,12 +140,98 @@ export function SettingsForm({ initial }: { initial: AppSettings }) {
     }
   }
 
+  async function provisionRetell() {
+    setProvisioning(true)
+    setProvisionMsg(null)
+    try {
+      const res = await fetch("/api/retell/provision", { method: "POST" })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(j.error || `Setup failed (${res.status})`)
+      setS((prev) => ({ ...prev, retellAgentId: j.agentId }))
+      setProvisionMsg({
+        ok: true,
+        text: j.created
+          ? "Retell agent created and pointed at this app — switch the provider above and save."
+          : "Retell agent re-synced with your current greeting, prompt and knowledge base.",
+      })
+      router.refresh() // re-render the server page so the status checklist updates
+    } catch (e) {
+      setProvisionMsg({ ok: false, text: (e as Error).message })
+    } finally {
+      setProvisioning(false)
+    }
+  }
+
   const isEleven = s.ttsProvider === "elevenlabs"
   const isKokoro = s.ttsProvider === "kokoro"
   const isCustomModel = !LLM_MODELS.some((m) => m.id === s.llmModel)
 
+  const retellSelected = s.voiceProvider === "retell"
+
   return (
     <div className="space-y-6 max-w-2xl">
+      <Section title="Call routing">
+        <Field
+          label="Voice provider"
+          hint="Applies live on the next call, like every other setting — the Twilio number keeps pointing at this app either way. Local runs the self-hosted pipeline (VAD → whisper → LLM → TTS); Retell hands the call to your Retell agent over SIP and logs it here via webhooks. If the Retell handoff ever fails, the call automatically falls back to the local pipeline."
+        >
+          <select className={inputCls} value={s.voiceProvider} onChange={(e) => set("voiceProvider", e.target.value)}>
+            <option value="local">Local — self-hosted pipeline</option>
+            <option value="retell">Retell AI — hosted agent</option>
+          </select>
+        </Field>
+
+        {retellSelected && !retell.ready && (
+          <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-300">
+            Retell is selected but not fully set up — calls will use the local pipeline until every
+            item below is green.
+          </div>
+        )}
+
+        <div className="space-y-1.5">
+          <StatusRow ok={retell.apiKeyConfigured} label="Retell API key configured (RETELL_API_KEY in .env.local)" />
+          <StatusRow ok={retell.publicHostConfigured} label="Public host configured (PUBLIC_HOST in .env.local)" />
+          <StatusRow ok={retell.migrationReady} label="Database migration ready (npm run db:setup)" />
+          <StatusRow ok={retell.agentIdConfigured} label="Retell agent configured (button below creates it)" />
+          <StatusRow
+            ok={retell.ready}
+            label={retell.ready ? "Retell integration ready" : "Retell integration not ready"}
+            strong
+          />
+          {!retell.signatureValidation && (
+            <div className="text-amber-400 text-xs pt-1">
+              ⚠ RETELL_SKIP_VALIDATION=true — webhook signatures are not being checked. Dev only.
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center gap-3 pt-1">
+          <button
+            type="button"
+            onClick={provisionRetell}
+            disabled={provisioning || !retell.apiKeyConfigured || !retell.publicHostConfigured}
+            className="rounded-lg border border-neutral-700 bg-neutral-800 px-3 py-1.5 text-sm text-neutral-200 hover:bg-neutral-700 disabled:opacity-50"
+          >
+            {provisioning ? "Setting up…" : retell.agentIdConfigured ? "Re-sync Retell agent" : "Create Retell agent"}
+          </button>
+          <span className="text-neutral-600 text-xs">
+            Builds the agent from your greeting, persona and knowledge base, and points its webhook
+            here. Re-run after editing any of those.
+          </span>
+        </div>
+        {provisionMsg && (
+          <div className={provisionMsg.ok ? "text-emerald-400 text-xs" : "text-red-400 text-xs"}>
+            {provisionMsg.text}
+          </div>
+        )}
+
+        <div className="text-neutral-600 text-xs leading-relaxed">
+          Setup is just: RETELL_API_KEY in <code className="text-neutral-400">.env.local</code> →
+          the button above → switch the provider and save. Voice selection for the Retell agent
+          lives in the Retell dashboard. Details &amp; rollback: <code className="text-neutral-400">RETELL.md</code>.
+        </div>
+      </Section>
+
       <Section title="Voice">
         <Field label="Provider" hint="Kokoro, Piper & say are free/local; ElevenLabs is premium.">
           <select className={inputCls} value={s.ttsProvider} onChange={(e) => set("ttsProvider", e.target.value)}>
@@ -309,6 +403,15 @@ export function SettingsForm({ initial }: { initial: AppSettings }) {
         {saved === "ok" && <span className="text-emerald-400 text-sm">Saved — live on next call.</span>}
         {saved === "err" && <span className="text-red-400 text-sm">Save failed.</span>}
       </div>
+    </div>
+  )
+}
+
+function StatusRow({ ok, label, strong }: { ok: boolean; label: string; strong?: boolean }) {
+  return (
+    <div className={`flex items-center gap-2 text-sm ${strong ? "font-medium" : ""}`}>
+      <span className={ok ? "text-emerald-400" : "text-amber-400"}>{ok ? "●" : "○"}</span>
+      <span className={ok ? "text-neutral-300" : "text-neutral-400"}>{label}</span>
     </div>
   )
 }

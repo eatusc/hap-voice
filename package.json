@@ -9,6 +9,7 @@
     "start": "NODE_ENV=production tsx server.ts",
     "db:setup": "tsx scripts/db-setup.ts",
     "db:seed": "tsx scripts/db-seed.ts",
+    "test:retell": "tsx scripts/test-retell.ts",
     "lint": "next lint",
     "typecheck": "tsc --noEmit"
   },

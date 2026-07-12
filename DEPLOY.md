@@ -87,7 +87,8 @@ If `psql` roles complain, ensure your login user is a Postgres superuser:
 ## 5. Configure `.env.local`
 
 If you scp'd it from the laptop, just edit the server-specific lines below.
-Otherwise `cp .env.example .env.local` and fill everything in.
+Otherwise create `.env.local` from the reference below (the repo intentionally
+ships no `.env.example` — this section is the canonical variable list).
 
 ```bash
 # Database
@@ -119,6 +120,13 @@ ELEVENLABS_MODEL=eleven_flash_v2_5
 # Persona
 BUSINESS_NAME=HelpAProduct
 ASSISTANT_GREETING=Thanks for calling HelpAProduct. This is the assistant — who am I speaking with?
+
+# Voice provider: local (self-hosted pipeline) or retell (hosted agent).
+# Boot default only — switchable live from the Settings page. See RETELL.md.
+VOICE_PROVIDER=local
+RETELL_API_KEY=<your retell key>        # the only required Retell entry
+RETELL_AGENT_ID=                        # optional; Settings can auto-create the agent
+RETELL_SKIP_VALIDATION=false
 ```
 
 ---
@@ -236,20 +244,32 @@ npx tsx scripts/simulate-call.ts       # full pipeline, no phone: STT→LLM→TT
 ```
 
 Then call and text +1 555-123-4567. Watch `hapvoice.log`; the call + text land in
-the dashboard at `https://voice.helpaproduct.com` (or `localhost:3010` on the box).
+the dashboard at `http://your-tailnet-host:3010` (tailnet) or
+`localhost:3010` on the box — the public hostname only serves the telephony
+webhooks, not the dashboard.
 
 ---
 
-## 12. Security hardening — do this before real traffic
+## 12. Security posture (current state)
 
-⚠️ **Twilio webhook signature validation is configured but NOT yet enforced in the
-route code.** Until it is, anyone who learns the webhook URL could POST fake calls
-or texts. Before relying on this on a public URL, add `X-Twilio-Signature`
-validation to `app/api/voice/incoming` and `app/api/sms/incoming` (using
-`TWILIO_AUTH_TOKEN`). Ask Claude to implement it — it's a small, well-defined change.
+Enforced in route code — keep `TWILIO_SKIP_VALIDATION=false` +
+`TWILIO_AUTH_TOKEN` set (and `RETELL_SKIP_VALIDATION=false` + `RETELL_API_KEY`):
 
-Also consider: restrict the dashboard (it's currently open to anyone who can reach
-the host) behind Cloudflare Access or basic auth.
+- **Twilio webhooks** (`/api/voice/incoming`, `/api/voice/status`,
+  `/api/voice/dial-status`, `/api/sms/incoming`) validate `X-Twilio-Signature`
+  and fail closed.
+- **Retell webhooks** (`/api/retell/inbound`, `/api/retell/events`) validate
+  `x-retell-signature` (HMAC-SHA256, 5-minute freshness) and fail closed.
+- **`/media` websocket** rejects streams that don't reference a live call
+  created by the validated voice webhook.
+- **Cloudflared ingress** (`cloudflared/config.yml`) exposes only those
+  telephony paths; the dashboard and its APIs (settings, knowledge, Retell
+  provisioning) are 404 from the internet and reachable only over the tailnet.
+  If you add a new webhook route, add it to the ingress allowlist too — and
+  restart cloudflared (`launchctl kickstart -k gui/$UID/local.hapvoice-cloudflared`).
+
+Dashboard auth beyond the tailnet boundary (Cloudflare Access / basic auth) is
+still worth adding if the tailnet ever widens.
 
 ---
 

@@ -42,6 +42,7 @@ function onMediaSocket(ws: WebSocket) {
     send: (text) => {
       if (ws.readyState === WebSocket.OPEN) ws.send(text)
     },
+    close: () => ws.close(),
   })
 
   ws.on("message", (data) => {

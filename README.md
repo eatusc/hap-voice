@@ -38,7 +38,7 @@ npm run db:setup          # creates the hap_voice database + schema
 npm run db:seed           # optional: a few demo calls for the dashboard
 
 # 3. Configure
-cp .env.example .env.local   # already done; edit as needed
+# edit .env.local as needed (all supported variables are documented in DEPLOY.md)
 #   → set OPENROUTER_API_KEY to enable the AI brain
 
 # 4. Run
@@ -111,6 +111,16 @@ carrier-level check, not something this app controls.
   spam assessment, and a one-click **Block number**.
 - **Blocked** — manage the block list. Blocked callers get `<Reject>` before the AI
   ever answers.
+
+## Optional: Retell AI as the voice provider
+
+The whole conversation layer can be swapped for a hosted
+[Retell AI](https://www.retellai.com) agent from the Settings page — a live
+toggle, just like switching TTS providers. Setup is one key in `.env.local`
+plus a button that auto-creates the agent (prompt, greeting, knowledge base,
+extraction fields, webhook) through Retell's API. The dashboard, blocked-numbers
+list, spam fields, and SMS stay exactly as they are, and calls fall back to the
+local pipeline if Retell is down. Details: **[RETELL.md](RETELL.md)**.
 
 ## Swapping providers (all via `.env.local`)
 

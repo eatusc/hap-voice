@@ -5,6 +5,8 @@ import { query } from "./db"
 // come from .env (via config); the app_settings table overrides them at runtime.
 // Secrets (API keys) and infra (port, hosts, DB URL) are NOT here — they stay in .env.
 export interface AppSettings {
+  voiceProvider: string // "local" | "retell" — which pipeline answers calls
+  retellAgentId: string // agent the app provisioned (empty = use RETELL_AGENT_ID env)
   ttsProvider: string // "say" | "piper" | "elevenlabs" | "kokoro"
   elevenLabsVoiceId: string
   elevenLabsModel: string
@@ -19,6 +21,8 @@ export interface AppSettings {
 
 function defaults(): AppSettings {
   return {
+    voiceProvider: config.voiceProvider,
+    retellAgentId: "",
     ttsProvider: config.tts.provider,
     elevenLabsVoiceId: config.tts.elevenLabsVoiceId,
     elevenLabsModel: config.tts.elevenLabsModel,
@@ -67,6 +71,7 @@ export async function updateSettings(patch: Partial<AppSettings>): Promise<AppSe
     if (!(key in allowed)) continue
     const k = key as keyof AppSettings
     let value = raw as unknown
+    if (k === "voiceProvider" && value !== "local" && value !== "retell") continue
     if (NUMERIC.has(k)) {
       let n = Number(value)
       if (!Number.isFinite(n)) continue

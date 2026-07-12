@@ -30,6 +30,7 @@ export default async function CallDetailPage({ params }: { params: Promise<{ id:
             {call.caller_company ? `${call.caller_company} · ` : ""}
             {formatPhone(call.from_number)} · {formatDateTime(call.started_at)} ·{" "}
             {formatDuration(call.duration_seconds)}
+            {call.voice_provider === "retell" ? " · via Retell" : ""}
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -62,7 +63,19 @@ export default async function CallDetailPage({ params }: { params: Promise<{ id:
               </span>
             </div>
             <Field label="Reason" value={call.reason} />
+            {call.disconnection_reason && (
+              <Field label="Ended by" value={call.disconnection_reason.replace(/_/g, " ")} />
+            )}
           </Panel>
+
+          {call.recording_url && (
+            <Panel title="Recording">
+              <audio controls src={call.recording_url} className="w-full" preload="none" />
+              <p className="text-xs text-neutral-500 mt-2">
+                Hosted by Retell — links can expire; open the Retell dashboard for archived audio.
+              </p>
+            </Panel>
+          )}
 
           {call.message && (
             <Panel title="Message">

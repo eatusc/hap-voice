@@ -9,9 +9,22 @@ export const config = {
   publicHost: env("PUBLIC_HOST"),
   databaseUrl: env("DATABASE_URL", "postgres://localhost:5432/hap_voice"),
 
+  // Which pipeline answers the phone: "local" (Twilio Media Streams → VAD →
+  // whisper → OpenRouter → TTS) or "retell" (Retell AI agent → webhooks).
+  // Overridable live from the Settings page; see RETELL.md.
+  voiceProvider: env("VOICE_PROVIDER", "local"),
+
   twilio: {
     authToken: env("TWILIO_AUTH_TOKEN"),
     skipValidation: env("TWILIO_SKIP_VALIDATION", "true") === "true",
+  },
+
+  retell: {
+    apiKey: env("RETELL_API_KEY"),
+    agentId: env("RETELL_AGENT_ID"),
+    skipValidation: env("RETELL_SKIP_VALIDATION", "false") === "true",
+    apiBase: env("RETELL_API_BASE", "https://api.retellai.com"),
+    sipDomain: env("RETELL_SIP_DOMAIN", "sip.retellai.com"),
   },
 
   llm: {

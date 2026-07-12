@@ -46,6 +46,10 @@ export interface Call {
   spam_score: number | null
   spam_reason: string | null
   is_spam: boolean
+  voice_provider: string
+  retell_call_id: string | null
+  disconnection_reason: string | null
+  recording_url: string | null
   created_at: string
 }
 
@@ -105,9 +109,23 @@ export async function createCall(input: {
   return row!
 }
 
+// Columns updateCall may touch. Guards the dynamic SET clause so a key that
+// didn't come from our own code (e.g. anything derived from webhook data) can
+// never reach the SQL.
+const CALL_COLUMNS = new Set([
+  "twilio_call_sid", "stream_sid", "from_number", "to_number", "direction",
+  "status", "started_at", "ended_at", "duration_seconds",
+  "caller_name", "caller_company", "caller_email", "reason", "callback_number",
+  "message", "summary", "spam_score", "spam_reason", "is_spam",
+  "voice_provider", "retell_call_id", "disconnection_reason", "recording_url",
+])
+
 export async function updateCall(id: number, patch: Partial<Call>): Promise<void> {
   const keys = Object.keys(patch)
   if (keys.length === 0) return
+  for (const k of keys) {
+    if (!CALL_COLUMNS.has(k)) throw new Error(`updateCall: unknown column "${k}"`)
+  }
   const sets = keys.map((k, i) => `${k} = $${i + 2}`).join(", ")
   await query(`UPDATE calls SET ${sets} WHERE id = $1`, [id, ...keys.map((k) => (patch as any)[k])])
 }
@@ -125,6 +143,56 @@ export async function getTurns(callId: number): Promise<TranscriptTurn[]> {
     `SELECT * FROM transcript_turns WHERE call_id = $1 ORDER BY seq ASC`,
     [callId],
   )
+}
+
+export async function getCallByRetellId(retellCallId: string): Promise<Call | null> {
+  return queryOne<Call>(`SELECT * FROM calls WHERE retell_call_id = $1`, [retellCallId])
+}
+
+// Create (or fetch, on webhook retry) the local record for a Retell call. The
+// partial unique index on retell_call_id makes concurrent duplicate webhook
+// deliveries converge on one row; the no-op DO UPDATE lets RETURNING yield it.
+export async function createRetellCall(input: {
+  retellCallId?: string | null
+  fromNumber: string
+  toNumber?: string | null
+  status?: string
+}): Promise<Call> {
+  const row = await queryOne<Call>(
+    `INSERT INTO calls (retell_call_id, voice_provider, from_number, to_number, status)
+     VALUES ($1, 'retell', $2, $3, $4)
+     ON CONFLICT (retell_call_id) WHERE retell_call_id IS NOT NULL
+       DO UPDATE SET retell_call_id = EXCLUDED.retell_call_id
+     RETURNING *`,
+    [input.retellCallId ?? null, input.fromNumber, input.toNumber ?? null, input.status ?? "in_progress"],
+  )
+  return row!
+}
+
+// Atomically replace a call's transcript. Retell resends the full transcript on
+// every event (and retries deliveries), so replacing — not appending — is what
+// keeps processing idempotent.
+export async function replaceTurns(
+  callId: number,
+  turns: { role: "caller" | "assistant"; text: string }[],
+): Promise<void> {
+  const client = await pool.connect()
+  try {
+    await client.query("BEGIN")
+    await client.query(`DELETE FROM transcript_turns WHERE call_id = $1`, [callId])
+    for (let i = 0; i < turns.length; i++) {
+      await client.query(
+        `INSERT INTO transcript_turns (call_id, seq, role, text) VALUES ($1, $2, $3, $4)`,
+        [callId, i + 1, turns[i].role, turns[i].text],
+      )
+    }
+    await client.query("COMMIT")
+  } catch (err) {
+    await client.query("ROLLBACK")
+    throw err
+  } finally {
+    client.release()
+  }
 }
 
 export async function isBlocked(number: string): Promise<boolean> {

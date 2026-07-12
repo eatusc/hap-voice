@@ -13,7 +13,7 @@ import { spawnSync } from "node:child_process"
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
-import { pool, getTurns, queryOne, type Call } from "../lib/db"
+import { pool, createCall, getTurns, queryOne, type Call } from "../lib/db"
 import { CallSession, type Transport } from "../lib/telephony/call-session"
 import { decodeWav, encodeWav } from "../lib/audio/wav"
 import { mulawToPcm16, pcm16ToMulaw, resamplePcm16 } from "../lib/audio/mulaw"
@@ -80,18 +80,21 @@ async function main() {
   transport.echoMark = (name) =>
     void session.handleMessage(JSON.stringify({ event: "mark", streamSid, mark: { name } }))
 
-  // 3. Start event → assistant greeting (response #1).
+  // 3. Start event → assistant greeting (response #1). Create the call record
+  // first, like the voice webhook does — sessions reject streams without a
+  // valid callId.
+  const simCall = await createCall({ twilioCallSid: "CA-sim-" + Date.now(), fromNumber: from })
   await session.handleMessage(
     JSON.stringify({
       event: "start",
       streamSid,
       start: {
         streamSid,
-        callSid: "CA-sim-" + Date.now(),
+        callSid: simCall.twilio_call_sid,
         accountSid: "AC-sim",
         tracks: ["inbound"],
         mediaFormat: { encoding: "audio/x-mulaw", sampleRate: 8000, channels: 1 },
-        customParameters: { from },
+        customParameters: { from, callId: String(simCall.id) },
       },
     }),
   )

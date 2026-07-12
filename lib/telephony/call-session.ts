@@ -12,7 +12,6 @@ import { config } from "../config"
 import { getSettings } from "../settings"
 import {
   addTurn,
-  createCall,
   getTurns,
   queryOne,
   updateCall,
@@ -27,6 +26,7 @@ import {
 
 export interface Transport {
   send(text: string): void
+  close?(): void
 }
 
 const MULAW_CHUNK = 3200 // ~400ms of 8kHz µ-law per media message
@@ -94,23 +94,27 @@ export class CallSession {
     const params = msg.start.customParameters ?? {}
     this.fromNumber = params.from ?? "unknown"
 
+    // Streams must reference a live call created by the signature-validated
+    // voice webhook (its TwiML always passes callId). The /media endpoint is
+    // public, so anything without that handle is rejected before it can burn
+    // STT/LLM/TTS resources.
     if (params.callId) {
-      const existing = await queryOne<Call>(`SELECT * FROM calls WHERE id = $1`, [Number(params.callId)])
+      const existing = await queryOne<Call>(
+        `SELECT * FROM calls WHERE id = $1 AND status = 'in_progress'`,
+        [Number(params.callId)],
+      )
       if (existing) {
         this.callId = existing.id
         this.fromNumber = existing.from_number
       }
     }
     if (this.callId == null) {
-      const call = await createCall({
-        twilioCallSid: msg.start.callSid,
-        streamSid: this.streamSid,
-        fromNumber: this.fromNumber,
-      })
-      this.callId = call.id
-    } else {
-      await updateCall(this.callId, { stream_sid: this.streamSid })
+      console.warn("[media ws] rejected stream without a valid in-progress callId")
+      this.finalized = true // nothing to record; skip finalize work on close
+      this.transport.close?.()
+      return
     }
+    await updateCall(this.callId, { stream_sid: this.streamSid })
 
     this.startedAtMs = Date.now()
     this.log("started, from", this.fromNumber)

@@ -27,6 +27,12 @@ CREATE TABLE IF NOT EXISTS calls (
   spam_reason     TEXT,
   is_spam         BOOLEAN NOT NULL DEFAULT false,
 
+  -- Voice provider plumbing ('local' = self-hosted pipeline, 'retell' = Retell AI)
+  voice_provider  TEXT NOT NULL DEFAULT 'local',
+  retell_call_id  TEXT,               -- Retell's call id (unique via partial index below)
+  disconnection_reason TEXT,          -- why the call ended (Retell-reported)
+  recording_url   TEXT,
+
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -36,6 +42,14 @@ CREATE INDEX IF NOT EXISTS calls_from_number_idx ON calls (from_number);
 -- Migrations for existing databases (CREATE TABLE IF NOT EXISTS above won't add
 -- new columns to an already-created table).
 ALTER TABLE calls ADD COLUMN IF NOT EXISTS caller_email TEXT;
+ALTER TABLE calls ADD COLUMN IF NOT EXISTS voice_provider TEXT NOT NULL DEFAULT 'local';
+ALTER TABLE calls ADD COLUMN IF NOT EXISTS retell_call_id TEXT;
+ALTER TABLE calls ADD COLUMN IF NOT EXISTS disconnection_reason TEXT;
+ALTER TABLE calls ADD COLUMN IF NOT EXISTS recording_url TEXT;
+
+-- Unique per Retell call so retried webhooks upsert instead of duplicating.
+CREATE UNIQUE INDEX IF NOT EXISTS calls_retell_call_id_key
+  ON calls (retell_call_id) WHERE retell_call_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS transcript_turns (
   id        BIGSERIAL PRIMARY KEY,
