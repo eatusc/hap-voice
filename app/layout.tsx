@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import { countUnreadMessages } from "@/lib/db"
 import { ChunkErrorReloader } from "@/components/chunk-error-reloader"
+import { LogoutButton } from "@/components/logout-button"
 import "./globals.css"
 
 export const metadata: Metadata = {
@@ -42,6 +43,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 <NavLink href="/knowledge">Knowledge</NavLink>
                 <NavLink href="/docs">How it works</NavLink>
                 <NavLink href="/settings">Settings</NavLink>
+                <LogoutButton />
               </nav>
             </div>
           </header>

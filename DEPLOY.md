@@ -98,6 +98,11 @@ DATABASE_URL=postgres://localhost:5432/hap_voice
 PORT=3010
 PUBLIC_HOST=voice.helpaproduct.com      # your stable tunnel hostname (Step 9)
 
+# Dashboard auth (REQUIRED) — gates the console; leave empty and nobody can log in.
+# The telephony webhooks stay open regardless, so calls/texts keep working.
+DASHBOARD_PASSWORD=<pick a strong password>
+# DASHBOARD_SESSION_SECRET=<optional long random string>
+
 # Twilio (signature validation — see Step 12)
 TWILIO_AUTH_TOKEN=<your twilio auth token>
 TWILIO_SKIP_VALIDATION=false
@@ -271,8 +276,12 @@ is honored only when `NODE_ENV !== "production"`, so on this box (started with
   too — and restart cloudflared
   (`launchctl kickstart -k gui/$UID/local.hapvoice-cloudflared`).
 
-Dashboard auth beyond the tailnet boundary (Cloudflare Access / basic auth) is
-still worth adding if the tailnet ever widens.
+- **Dashboard password** — every console page and admin/data API (settings,
+  knowledge, Retell provisioning, data deletion) requires a login session
+  (`DASHBOARD_PASSWORD`), enforced by `middleware.ts`. This is defense-in-depth
+  on top of the tailnet boundary: even if the tailnet widens or the ingress is
+  misconfigured, the dashboard still demands the password. The telephony
+  webhooks above are intentionally exempt (they enforce their own signatures).
 
 ### Data deletion (right-to-erasure)
 
