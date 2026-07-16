@@ -38,7 +38,7 @@ npm run db:setup          # creates the hap_voice database + schema
 npm run db:seed           # optional: a few demo calls for the dashboard
 
 # 3. Configure
-# edit .env.local as needed (all supported variables are documented in DEPLOY.md)
+cp .env.example .env.local   # then edit; every variable is documented inline + in DEPLOY.md
 #   → set OPENROUTER_API_KEY to enable the AI brain
 
 # 4. Run
@@ -144,6 +144,35 @@ Everything is local-first by design. To move to a server:
 2. **TTS:** switch `say` → `piper` (Linux-friendly).
 3. **Host:** run `npm run build` then `npm start`; put it behind a stable HTTPS
    host and set `PUBLIC_HOST`.
+
+## Security posture
+
+The design assumes two trust zones: **the public internet** (only telephony
+webhooks reach it) and **a private network** (the dashboard + its APIs).
+
+- **Webhook signatures, fail-closed.** Twilio (`X-Twilio-Signature`, HMAC-SHA1)
+  and Retell (`x-retell-signature`, HMAC-SHA256 with 5-minute freshness) are
+  verified with timing-safe comparisons; a missing key/header/bad signature is
+  rejected. Skipping validation is **hard-gated to non-production** — the
+  `*_SKIP_VALIDATION` flags are ignored when `NODE_ENV=production`, so a live
+  deployment always validates regardless of env.
+- **Media websocket is not a back door.** `/media` streams must reference a live
+  call created by a signature-validated voice webhook, or they're dropped before
+  any STT/LLM/TTS runs.
+- **Least public surface.** The Cloudflare Tunnel (`cloudflared/config.example.yml`)
+  exposes *only* the telephony paths; the dashboard, settings, knowledge base,
+  provisioning, and data-deletion APIs are unreachable from the internet and
+  live only on the private network.
+- **No shell, no string SQL.** Subprocesses (`whisper`/`say`/`piper`) are spawned
+  with argv arrays, never a shell; all SQL is parameterized and `updateCall`
+  guards columns against an allowlist.
+- **Secrets stay out of the repo.** Keys live in `.env.local` (gitignored);
+  webhook handlers never log request bodies (which carry caller PII/transcripts).
+- **Right-to-erasure.** `POST /api/data-deletion` wipes every call + text tied to
+  a number; `DELETE /api/calls/[id]` removes one call and its transcript.
+
+Beyond the private-network boundary there is no app-layer auth — if you widen
+that boundary, add Cloudflare Access or basic auth (see `DEPLOY.md`).
 
 ## Layout
 

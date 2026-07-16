@@ -3,6 +3,9 @@ node_modules
 .env
 .env.local
 *.log
+
+# Real tunnel config holds your tunnel id — commit config.example.yml instead.
+cloudflared/config.yml
 .DS_Store
 next-env.d.ts
 tsconfig.tsbuildinfo

@@ -1,0 +1,17 @@
+# Cloudflare Tunnel config for hap-voice. Copy to config.yml and fill in your
+# own tunnel name + credentials path. config.yml is gitignored (it holds your
+# tunnel id). See DEPLOY.md for the full `cloudflared tunnel create` walkthrough.
+tunnel: hap-voice
+credentials-file: /Users/<you>/.cloudflared/<TUNNEL_ID>.json
+ingress:
+  # Only the telephony webhooks and the call media websocket are exposed
+  # publicly: Twilio (voice/sms/media) plus Retell's two signature-verified
+  # webhooks. NOT /api/retell/provision or the dashboard — those are dashboard
+  # actions, reachable only over the private network (tailnet), never the
+  # internet. If you add a new public webhook route, add it here too.
+  - hostname: voice.example.com
+    path: ^/(media|api/voice/|api/sms/|api/retell/(inbound|events)$)
+    service: http://localhost:3010
+  - hostname: voice.example.com
+    service: http_status:404
+  - service: http_status:404
