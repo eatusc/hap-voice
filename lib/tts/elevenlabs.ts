@@ -9,6 +9,7 @@ import { resamplePcm16 } from "../audio/mulaw"
 export async function synthesizeElevenLabs(
   text: string,
   override: Partial<AppSettings> = {},
+  signal?: AbortSignal,
 ): Promise<Int16Array> {
   if (!config.tts.elevenLabsKey) throw new Error("ELEVENLABS_API_KEY not set")
 
@@ -16,6 +17,7 @@ export async function synthesizeElevenLabs(
   const url = `https://api.elevenlabs.io/v1/text-to-speech/${s.elevenLabsVoiceId}?output_format=pcm_16000`
   const res = await fetch(url, {
     method: "POST",
+    signal,
     headers: {
       "xi-api-key": config.tts.elevenLabsKey,
       "Content-Type": "application/json",

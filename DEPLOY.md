@@ -252,8 +252,10 @@ webhooks, not the dashboard.
 
 ## 12. Security posture (current state)
 
-Enforced in route code — keep `TWILIO_SKIP_VALIDATION=false` +
-`TWILIO_AUTH_TOKEN` set (and `RETELL_SKIP_VALIDATION=false` + `RETELL_API_KEY`):
+Signature validation is **hard-gated to production**: `*_SKIP_VALIDATION=true`
+is honored only when `NODE_ENV !== "production"`, so on this box (started with
+`NODE_ENV=production`) a stray skip flag can never disable validation. Keep
+`TWILIO_AUTH_TOKEN` + `RETELL_API_KEY` set so the checks have their keys.
 
 - **Twilio webhooks** (`/api/voice/incoming`, `/api/voice/status`,
   `/api/voice/dial-status`, `/api/sms/incoming`) validate `X-Twilio-Signature`
@@ -264,12 +266,31 @@ Enforced in route code — keep `TWILIO_SKIP_VALIDATION=false` +
   created by the validated voice webhook.
 - **Cloudflared ingress** (`cloudflared/config.yml`) exposes only those
   telephony paths; the dashboard and its APIs (settings, knowledge, Retell
-  provisioning) are 404 from the internet and reachable only over the tailnet.
-  If you add a new webhook route, add it to the ingress allowlist too — and
-  restart cloudflared (`launchctl kickstart -k gui/$UID/local.hapvoice-cloudflared`).
+  provisioning, data deletion) are 404 from the internet and reachable only over
+  the tailnet. If you add a new webhook route, add it to the ingress allowlist
+  too — and restart cloudflared
+  (`launchctl kickstart -k gui/$UID/local.hapvoice-cloudflared`).
 
 Dashboard auth beyond the tailnet boundary (Cloudflare Access / basic auth) is
 still worth adding if the tailnet ever widens.
+
+### Data deletion (right-to-erasure)
+
+Stored PII lives in `calls` (transcripts, extracted name/email/message, spam
+notes) and `messages` (SMS/MMS bodies, detected OTP codes). To service a
+"delete my data" request, run either from the box or over the tailnet:
+
+```bash
+# Erase everything tied to one phone number (calls + texts, both directions):
+curl -X POST http://localhost:3010/api/data-deletion \
+  -H 'content-type: application/json' -d '{"number":"+12135551234"}'
+
+# Or delete a single call + its transcript by id:
+curl -X DELETE http://localhost:3010/api/calls/42
+```
+
+Both are dashboard-side (tailnet-only) operator actions; transcript rows cascade
+with the call. Deletion is permanent — there is no soft-delete/undo.
 
 ---
 

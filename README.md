@@ -86,8 +86,9 @@ for +1 555-123-4567 → **Voice Configuration → A call comes in**:
 - **Webhook:** `https://abc123.ngrok-free.app/api/voice/incoming` (HTTP POST)
 - **Status callback:** `https://abc123.ngrok-free.app/api/voice/status` (optional)
 
-Call the number and talk to it. Set `TWILIO_AUTH_TOKEN` and
-`TWILIO_SKIP_VALIDATION=false` to validate Twilio signatures in production.
+Call the number and talk to it. Set `TWILIO_AUTH_TOKEN` so signature validation
+has its key — in production (`NODE_ENV=production`) validation is always on and
+`TWILIO_SKIP_VALIDATION` is ignored; the flag only skips checks in local dev.
 
 ### Receiving texts (verification codes, business SMS)
 

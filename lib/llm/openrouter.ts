@@ -9,13 +9,16 @@ export interface ChatMessage {
 
 async function chatCompletion(
   messages: ChatMessage[],
-  opts: { json?: boolean; maxTokens?: number; temperature?: number; model?: string } = {},
+  opts: { json?: boolean; maxTokens?: number; temperature?: number; model?: string; signal?: AbortSignal } = {},
 ): Promise<string> {
   if (!config.llm.apiKey) throw new Error("OPENROUTER_API_KEY not set")
 
   const model = opts.model || (await getSettings()).llmModel
   const res = await fetch(`${config.llm.baseUrl}/chat/completions`, {
     method: "POST",
+    // Aborted when the caller barges in mid-generation, so a stale reply never
+    // finishes downloading (and never gets spoken over the new turn).
+    signal: opts.signal,
     headers: {
       Authorization: `Bearer ${config.llm.apiKey}`,
       "Content-Type": "application/json",
@@ -68,15 +71,18 @@ export async function systemPrompt(override: Partial<AppSettings> = {}): Promise
   return { role: "system", content: lines.join("\n") }
 }
 
-/** Generate the assistant's spoken reply given the conversation so far. */
+/** Generate the assistant's spoken reply given the conversation so far. Pass a
+ * signal to cancel the request if the caller interrupts before it finishes. */
 export async function generateReply(
   history: ChatMessage[],
   override: Partial<AppSettings> = {},
+  signal?: AbortSignal,
 ): Promise<string> {
   return chatCompletion([await systemPrompt(override), ...history], {
     maxTokens: 120,
     temperature: 0.6,
     model: override.llmModel,
+    signal,
   })
 }
 

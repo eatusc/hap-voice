@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { getTurns, queryOne, updateCall, type Call } from "@/lib/db"
+import { deleteCall, getTurns, queryOne, updateCall, type Call } from "@/lib/db"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -23,5 +23,15 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     is_spam: body.is_spam,
     spam_reason: body.is_spam ? "Marked as spam by you" : "Marked not spam by you",
   })
+  return NextResponse.json({ ok: true })
+}
+
+// Permanently delete a single call and its transcript (right-to-erasure). The
+// dashboard APIs are tailnet-only (see cloudflared config), so this is an
+// operator action, never reachable from the public internet.
+export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  const deleted = await deleteCall(Number(id))
+  if (!deleted) return NextResponse.json({ error: "Not found" }, { status: 404 })
   return NextResponse.json({ ok: true })
 }

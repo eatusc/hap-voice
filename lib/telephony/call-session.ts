@@ -48,6 +48,9 @@ export class CallSession {
   private pendingUtterances: Int16Array[] = []
   private finalized = false
   private responseSeq = 0
+  // Cancels the in-flight turn's LLM + TTS work when the caller barges in, so a
+  // stale reply can't finish generating and get spoken over the new turn.
+  private currentTurnAbort: AbortController | null = null
 
   constructor(private transport: Transport) {
     this.vad.onSpeechStart = () => this.onCallerSpeechStart()
@@ -134,6 +137,11 @@ export class CallSession {
   // ─── Barge-in ─────────────────────────────────────────────────────────────
 
   private onCallerSpeechStart() {
+    // Cancel any in-flight LLM/TTS work first — whether or not audio is already
+    // playing, the caller has moved on, so a reply still being generated must
+    // not be spoken. The turn's post-await guards drop it once aborted.
+    this.currentTurnAbort?.abort()
+
     if (this.assistantSpeaking) {
       this.log("barge-in — caller interrupted")
       this.transport.send(clearMessage(this.streamSid))
@@ -169,6 +177,8 @@ export class CallSession {
 
   private async processTurn(pcm: Int16Array) {
     this.turnBusy = true
+    const abort = new AbortController()
+    this.currentTurnAbort = abort
     const turnStarted = Date.now()
     try {
       const sttStarted = Date.now()
@@ -185,22 +195,32 @@ export class CallSession {
       let reply: string
       const llmStarted = Date.now()
       try {
-        reply = await generateReply(this.history)
+        reply = await generateReply(this.history, {}, abort.signal)
       } catch (err) {
+        // A barge-in aborts the request — that's expected, not an error, and the
+        // guard below drops the turn without logging a spurious failure.
+        if (abort.signal.aborted) return
         this.log("LLM error:", (err as Error).message)
         reply = "Sorry, I'm having trouble hearing you. Could you say that again?"
       }
+      // Caller interrupted while we were generating — abandon this reply so it
+      // never lands on top of the new turn.
+      if (abort.signal.aborted) return
       const llmMs = Date.now() - llmStarted
       if (!reply) reply = "Could you repeat that?"
 
-      this.history.push({ role: "assistant", content: reply })
       this.log(`assistant (LLM ${llmMs}ms):`, reply)
-      await this.speak(reply, true)
+      // Commit the reply to history only if it was actually spoken — a barge-in
+      // mid-synthesis drops it, so the transcript can't show a reply the caller
+      // never heard (which would also mislead the next turn's context).
+      const spoke = await this.speak(reply, true, abort.signal)
+      if (spoke) this.history.push({ role: "assistant", content: reply })
       this.log(`turn ready in ${Date.now() - turnStarted}ms`)
     } catch (err) {
       this.log("turn error:", (err as Error).message)
     } finally {
       this.turnBusy = false
+      if (this.currentTurnAbort === abort) this.currentTurnAbort = null
       // Drain anything the caller said while we worked, as one combined turn.
       const next = this.drainPending()
       if (next) void this.processTurn(next)
@@ -209,18 +229,25 @@ export class CallSession {
 
   // ─── Speaking ─────────────────────────────────────────────────────────────
 
-  private async speak(text: string, record: boolean) {
-    if (record) await this.recordTurn("assistant", text)
+  // Returns true if the audio was actually sent, false if it was dropped
+  // (aborted by a barge-in, or TTS failed). Records the turn only when spoken.
+  private async speak(text: string, record: boolean, signal?: AbortSignal): Promise<boolean> {
+    if (signal?.aborted) return false
     let pcm: Int16Array
     const ttsStarted = Date.now()
     try {
-      pcm = await this.tts.synthesize(text)
+      pcm = await this.tts.synthesize(text, signal)
     } catch (err) {
+      if (signal?.aborted) return false
       this.log("TTS error:", (err as Error).message)
-      return
+      return false
     }
+    // Caller barged in while we were synthesizing — don't send stale audio.
+    if (signal?.aborted) return false
     this.log(`TTS synthesized in ${Date.now() - ttsStarted}ms`)
+    if (record) await this.recordTurn("assistant", text)
     this.sendAudio(pcm)
+    return true
   }
 
   private sendAudio(pcm8k: Int16Array) {

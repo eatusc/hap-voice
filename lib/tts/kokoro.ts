@@ -10,10 +10,12 @@ import { resamplePcm16 } from "../audio/mulaw"
 export async function synthesizeKokoro(
   text: string,
   override: Partial<AppSettings> = {},
+  signal?: AbortSignal,
 ): Promise<Int16Array> {
   const s = { ...(await getSettings()), ...override }
   const res = await fetch(`${config.tts.kokoroUrl}/tts`, {
     method: "POST",
+    signal,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text, voice: s.kokoroVoice, speed: s.ttsSpeed }),
   })

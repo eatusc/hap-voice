@@ -200,6 +200,46 @@ export async function isBlocked(number: string): Promise<boolean> {
   return !!row
 }
 
+// ─── Data deletion (right-to-erasure) ───────────────────────────────────────
+
+export async function deleteCall(id: number): Promise<boolean> {
+  // transcript_turns rows cascade via their FK (ON DELETE CASCADE).
+  const rows = await query<{ id: number }>(`DELETE FROM calls WHERE id = $1 RETURNING id`, [id])
+  return rows.length > 0
+}
+
+export interface DeletionResult {
+  calls: number
+  messages: number
+}
+
+// Erase every stored trace of a phone number: its calls (transcripts, extracted
+// name/email/message, spam notes — transcript_turns cascade) and its SMS/MMS
+// (bodies and any detected OTP codes). Matches the number in either direction so
+// a caller who also texted, or was texted, is fully cleared. This is where
+// "delete my data" requests are serviced.
+export async function deleteDataForNumber(number: string): Promise<DeletionResult> {
+  const client = await pool.connect()
+  try {
+    await client.query("BEGIN")
+    const calls = await client.query(
+      `DELETE FROM calls WHERE from_number = $1 OR to_number = $1 OR callback_number = $1`,
+      [number],
+    )
+    const messages = await client.query(
+      `DELETE FROM messages WHERE from_number = $1 OR to_number = $1`,
+      [number],
+    )
+    await client.query("COMMIT")
+    return { calls: calls.rowCount ?? 0, messages: messages.rowCount ?? 0 }
+  } catch (err) {
+    await client.query("ROLLBACK")
+    throw err
+  } finally {
+    client.release()
+  }
+}
+
 // ─── Message helpers ────────────────────────────────────────────────────────
 
 export async function insertMessage(input: {

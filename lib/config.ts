@@ -4,6 +4,15 @@ function env(key: string, fallback = ""): string {
   return process.env[key] ?? fallback
 }
 
+// Webhook signature validation may only be skipped OUTSIDE production, and even
+// then only when the flag is explicitly set. In production the flag is ignored
+// entirely — a live deployment always validates, no matter what the env says —
+// so a stray SKIP_VALIDATION=true can never silently open a real phone line.
+const isProduction = process.env.NODE_ENV === "production"
+function skipValidation(key: string): boolean {
+  return !isProduction && env(key) === "true"
+}
+
 export const config = {
   port: parseInt(env("PORT", "3010"), 10),
   publicHost: env("PUBLIC_HOST"),
@@ -16,13 +25,13 @@ export const config = {
 
   twilio: {
     authToken: env("TWILIO_AUTH_TOKEN"),
-    skipValidation: env("TWILIO_SKIP_VALIDATION", "true") === "true",
+    skipValidation: skipValidation("TWILIO_SKIP_VALIDATION"),
   },
 
   retell: {
     apiKey: env("RETELL_API_KEY"),
     agentId: env("RETELL_AGENT_ID"),
-    skipValidation: env("RETELL_SKIP_VALIDATION", "false") === "true",
+    skipValidation: skipValidation("RETELL_SKIP_VALIDATION"),
     apiBase: env("RETELL_API_BASE", "https://api.retellai.com"),
     sipDomain: env("RETELL_SIP_DOMAIN", "sip.retellai.com"),
   },
