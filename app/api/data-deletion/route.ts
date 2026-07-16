@@ -19,7 +19,7 @@ export async function POST(request: Request) {
   // Require a full E.164 number so a stray "" or "+" can't wipe unrelated rows.
   if (!/^\+[1-9]\d{6,14}$/.test(number)) {
     return NextResponse.json(
-      { error: "A phone number in E.164 format (e.g. +19995550100) is required." },
+      { error: "A phone number in E.164 format (e.g. +15551234567) is required." },
       { status: 400 },
     )
   }

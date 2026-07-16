@@ -1,6 +1,6 @@
 # hap-voice
 
-An AI voice receptionist for the HelpAProduct line (+1 555-123-4567). It answers
+An AI voice receptionist for the HelpAProduct line (your Twilio number). It answers
 calls, has a natural spoken conversation, screens who's calling and why, takes a
 message, flags spam/robocalls, and logs everything to a dashboard.
 
@@ -81,7 +81,7 @@ ngrok http 3010
 
 Set `PUBLIC_HOST=abc123.ngrok-free.app` in `.env.local` (or leave it blank — the TwiML
 route also derives the host from the incoming request). Then in the Twilio Console
-for +1 555-123-4567 → **Voice Configuration → A call comes in**:
+for your Twilio number → **Voice Configuration → A call comes in**:
 
 - **Webhook:** `https://abc123.ngrok-free.app/api/voice/incoming` (HTTP POST)
 - **Status callback:** `https://abc123.ngrok-free.app/api/voice/status` (optional)

@@ -11,7 +11,7 @@ by hand or hand it to Claude Code on the server.
 | Thing | Value used below |
 |---|---|
 | Server user | `YOUR_USER` (home `/Users/YOUR_USER`) |
-| App directory | `/Users/YOUR_USER/code/hap-voice` (sibling of `zencub-rag`) |
+| App directory | `/Users/YOUR_USER/code/hap-voice` |
 | Port | `3010` (must be free on the server — pick another if taken) |
 | Public URL | `https://voice.helpaproduct.com` via a Cloudflare Tunnel |
 | CPU | Apple Silicon (Homebrew at `/opt/homebrew`) |
@@ -31,7 +31,7 @@ same as on the dev laptop — only the public-URL/service pieces are new.
 then edit the few server-specific lines (Step 5). From the **laptop**:
 
 ```bash
-scp /Users/YOUR_USER/Sites/localhost/hap-voice/.env.local YOUR_USER@<server-host>:/Users/YOUR_USER/code/hap-voice/.env.local
+scp /path/to/hap-voice/.env.local YOUR_USER@<server-host>:/Users/YOUR_USER/code/hap-voice/.env.local
 ```
 
 (Do this after Step 2 so the directory exists. Never commit `.env.local`.)
@@ -80,7 +80,7 @@ npm run db:setup      # creates the hap_voice DB + schema (idempotent)
 ```
 
 If `psql` roles complain, ensure your login user is a Postgres superuser:
-`createuser -s YOUR_USER 2>/dev/null; createdb YOUR_USER 2>/dev/null` then re-run.
+`createuser -s "$(whoami)" 2>/dev/null; createdb "$(whoami)" 2>/dev/null` then re-run.
 
 ---
 
@@ -225,7 +225,7 @@ restart the app service so the voice `<Stream>` uses that host.
 
 ## 10. Point Twilio at the server
 
-Twilio Console → Phone Numbers → **+1 555-123-4567**:
+Twilio Console → Phone Numbers → **your Twilio number**:
 
 - **Voice → "A call comes in"** → `https://voice.helpaproduct.com/api/voice/incoming` (HTTP POST)
 - **Messaging → "A message comes in"** → `https://voice.helpaproduct.com/api/sms/incoming` (HTTP POST)
@@ -243,7 +243,7 @@ npm run db:seed                        # optional demo rows in the dashboard
 npx tsx scripts/simulate-call.ts       # full pipeline, no phone: STT→LLM→TTS
 ```
 
-Then call and text +1 555-123-4567. Watch `hapvoice.log`; the call + text land in
+Then call and text your Twilio number. Watch `hapvoice.log`; the call + text land in
 the dashboard at `http://your-tailnet-host:3010` (tailnet) or
 `localhost:3010` on the box — the public hostname only serves the telephony
 webhooks, not the dashboard.

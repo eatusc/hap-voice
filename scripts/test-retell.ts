@@ -21,6 +21,8 @@ const API_KEY = process.env.RETELL_API_KEY
 const AGENT_ID = "agent_test_123"
 const BLOCKED = "+19995550001"
 const CALLER = "+19995550002"
+// Destination (your Twilio line). Override via env; falls back to a fictional number.
+const TO = process.env.TEST_TO_NUMBER || "+19995550100"
 const RETELL_ID = `test_call_${Date.now()}`
 
 let passed = 0
@@ -81,7 +83,7 @@ async function main() {
     let res = await inbound(
       post("/api/retell/inbound", {
         event: "call_inbound",
-        call_inbound: { from_number: BLOCKED, to_number: "+19995550100" },
+        call_inbound: { from_number: BLOCKED, to_number: TO },
       }),
     )
     let j = await res.json()
@@ -96,7 +98,7 @@ async function main() {
     res = await inbound(
       post("/api/retell/inbound", {
         event: "call_inbound",
-        call_inbound: { from_number: CALLER, to_number: "+19995550100" },
+        call_inbound: { from_number: CALLER, to_number: TO },
       }),
     )
     j = await res.json()
@@ -246,7 +248,7 @@ async function main() {
 
     try {
       await updateSettings({ voiceProvider: "retell" })
-      let r = await incoming(twilioPost(IN, { From: CALLER, To: "+19995550100", CallSid: bridgedSid }))
+      let r = await incoming(twilioPost(IN, { From: CALLER, To: TO, CallSid: bridgedSid }))
       let twiml = await r.text()
       check("retell selected → <Dial><Sip> TwiML", twiml.includes("<Dial") && twiml.includes("sip:test_reg_abc@"), twiml)
       check("register uses the configured agent id", registerBody?.agent_id === "agent_test_123", registerBody)
@@ -259,15 +261,15 @@ async function main() {
       )
 
       failRegister = true
-      r = await incoming(twilioPost(IN, { From: CALLER, To: "+19995550100", CallSid: `CAtest2${Date.now()}` }))
+      r = await incoming(twilioPost(IN, { From: CALLER, To: TO, CallSid: `CAtest2${Date.now()}` }))
       twiml = await r.text()
       check("retell handoff failure → local <Connect><Stream> fallback", twiml.includes("<Connect>") && twiml.includes("/media"), twiml)
 
-      r = await incoming(twilioPost(IN, { From: BLOCKED, To: "+19995550100", CallSid: `CAtest3${Date.now()}` }))
+      r = await incoming(twilioPost(IN, { From: BLOCKED, To: TO, CallSid: `CAtest3${Date.now()}` }))
       check("blocked caller still rejected in retell mode", (await r.text()).includes("<Reject"))
 
       await updateSettings({ voiceProvider: "local" })
-      r = await incoming(twilioPost(IN, { From: CALLER, To: "+19995550100", CallSid: `CAtest4${Date.now()}` }))
+      r = await incoming(twilioPost(IN, { From: CALLER, To: TO, CallSid: `CAtest4${Date.now()}` }))
       check("switch back to local → <Connect><Stream>", (await r.text()).includes("<Connect>"))
 
       // ── Dial action: bridge outcome handling ──────────────────────────
