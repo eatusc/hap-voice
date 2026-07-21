@@ -19,3 +19,10 @@ kokoro/venv
 kokoro/*.onnx
 kokoro/voices-*.bin
 kokoro/samples
+
+# ── Env files: never commit secrets ─────────────────────────────────────────
+# Covers .env, .env.local, .env.production, and any suffixed copy
+# (.env.local.bak, .env.local.from-lappy, ...). Templates stay tracked.
+.env
+.env.*
+!.env.example
