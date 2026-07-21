@@ -1,12 +1,11 @@
 # Deploying hap-voice on a Mac server (production)
 
 A complete runbook to run hap-voice as an always-on service on a Mac (e.g. a Mac
-Studio), reachable by Twilio for real calls + texts. Written so you can follow it
-by hand or hand it to Claude Code on the server.
+Studio), reachable by Twilio for real calls + texts.
 
 ---
 
-## Assumptions — change these if your setup differs
+## Assumptions: change these if your setup differs
 
 | Thing | Value used below |
 |---|---|
@@ -17,18 +16,22 @@ by hand or hand it to Claude Code on the server.
 | CPU | Apple Silicon (Homebrew at `/opt/homebrew`) |
 
 Everything is macOS-native, so `say`, `whisper.cpp`, Postgres, etc. all run the
-same as on the dev laptop — only the public-URL/service pieces are new.
+same as on a dev machine; only the public-URL/service pieces are new.
 
 ---
 
 ## 0. Secrets you'll need on the server
 
-- `OPENROUTER_API_KEY` — the LLM brain
-- `ELEVENLABS_API_KEY` (+ a voice ID from *your* account) — the voice
-- `TWILIO_AUTH_TOKEN` — for webhook signature validation (once implemented)
+- `OPENROUTER_API_KEY`: the LLM brain
+- `ELEVENLABS_API_KEY` (+ a voice ID from the same account): the voice
+  (skip if using a free local TTS provider)
+- `TWILIO_AUTH_TOKEN`: for webhook signature validation
+  (implemented in `lib/telephony/validate-signature.ts`; always on in production)
+- `DASHBOARD_PASSWORD`: gates the dashboard (Step 5)
 
-**Fastest path:** securely copy your laptop's working `.env.local` to the server,
-then edit the few server-specific lines (Step 5). From the **laptop**:
+**Fastest path:** if a dev machine already has a working `.env.local`, securely
+copy it to the server, then edit the few server-specific lines (Step 5). From
+the **dev machine**:
 
 ```bash
 scp /path/to/hap-voice/.env.local YOUR_USER@<server-host>:/Users/YOUR_USER/code/hap-voice/.env.local
@@ -86,9 +89,9 @@ If `psql` roles complain, ensure your login user is a Postgres superuser:
 
 ## 5. Configure `.env.local`
 
-If you scp'd it from the laptop, just edit the server-specific lines below.
-Otherwise create `.env.local` from the reference below (the repo intentionally
-ships no `.env.example` — this section is the canonical variable list).
+If you scp'd it from a dev machine, just edit the server-specific lines below.
+Otherwise start from `.env.example` (every variable is documented inline) or
+from the reference below.
 
 ```bash
 # Database
@@ -119,7 +122,7 @@ WHISPER_MODEL=./models/ggml-small.en.bin
 # Text-to-speech (ElevenLabs — natural voice)
 TTS_PROVIDER=elevenlabs
 ELEVENLABS_API_KEY=<your key>
-ELEVENLABS_VOICE_ID=EXAVITQu4vr4xnSDxMaL   # a voice in YOUR account (this = "Sarah")
+ELEVENLABS_VOICE_ID=EXAVITQu4vr4xnSDxMaL   # a voice available in the account (this = "Sarah")
 ELEVENLABS_MODEL=eleven_flash_v2_5
 
 # Persona
@@ -235,8 +238,8 @@ Twilio Console → Phone Numbers → **your Twilio number**:
 - **Voice → "A call comes in"** → `https://voice.helpaproduct.com/api/voice/incoming` (HTTP POST)
 - **Messaging → "A message comes in"** → `https://voice.helpaproduct.com/api/sms/incoming` (HTTP POST)
 
-If the number is in the "ThrivePact Messaging System" Messaging Service, set that
-service's **Integration → Incoming Messages → "Defer to sender's webhook"** so the
+If the number belongs to a Twilio Messaging Service, set that service's
+**Integration → Incoming Messages → "Defer to sender's webhook"** so the
 number's SMS webhook (above) is actually used.
 
 ---
@@ -248,18 +251,18 @@ npm run db:seed                        # optional demo rows in the dashboard
 npx tsx scripts/simulate-call.ts       # full pipeline, no phone: STT→LLM→TTS
 ```
 
-Then call and text your Twilio number. Watch `hapvoice.log`; the call + text land in
-the dashboard at `http://your-tailnet-host:3010` (tailnet) or
-`localhost:3010` on the box — the public hostname only serves the telephony
-webhooks, not the dashboard.
+Then call and text the Twilio number. Watch `hapvoice.log`; the call + text land
+in the dashboard at `localhost:3010` on the server, or over a private network
+(VPN/tailnet) if the server is on one. The public hostname only serves the
+telephony webhooks, not the dashboard.
 
 ---
 
 ## 12. Security posture (current state)
 
 Signature validation is **hard-gated to production**: `*_SKIP_VALIDATION=true`
-is honored only when `NODE_ENV !== "production"`, so on this box (started with
-`NODE_ENV=production`) a stray skip flag can never disable validation. Keep
+is honored only when `NODE_ENV !== "production"`, so on a server started with
+`NODE_ENV=production` a stray skip flag can never disable validation. Keep
 `TWILIO_AUTH_TOKEN` + `RETELL_API_KEY` set so the checks have their keys.
 
 - **Twilio webhooks** (`/api/voice/incoming`, `/api/voice/status`,
@@ -271,23 +274,23 @@ is honored only when `NODE_ENV !== "production"`, so on this box (started with
   created by the validated voice webhook.
 - **Cloudflared ingress** (`cloudflared/config.yml`) exposes only those
   telephony paths; the dashboard and its APIs (settings, knowledge, Retell
-  provisioning, data deletion) are 404 from the internet and reachable only over
-  the tailnet. If you add a new webhook route, add it to the ingress allowlist
-  too — and restart cloudflared
+  provisioning, data deletion) are 404 from the internet and reachable only on
+  the private network. If you add a new webhook route, add it to the ingress
+  allowlist too, and restart cloudflared
   (`launchctl kickstart -k gui/$UID/local.hapvoice-cloudflared`).
 
-- **Dashboard password** — every console page and admin/data API (settings,
+- **Dashboard password**: every console page and admin/data API (settings,
   knowledge, Retell provisioning, data deletion) requires a login session
   (`DASHBOARD_PASSWORD`), enforced by `middleware.ts`. This is defense-in-depth
-  on top of the tailnet boundary: even if the tailnet widens or the ingress is
-  misconfigured, the dashboard still demands the password. The telephony
+  on top of the network boundary: even if that boundary widens or the ingress
+  is misconfigured, the dashboard still demands the password. The telephony
   webhooks above are intentionally exempt (they enforce their own signatures).
 
 ### Data deletion (right-to-erasure)
 
 Stored PII lives in `calls` (transcripts, extracted name/email/message, spam
 notes) and `messages` (SMS/MMS bodies, detected OTP codes). To service a
-"delete my data" request, run either from the box or over the tailnet:
+"delete my data" request, run either from the server or over the private network:
 
 ```bash
 # Erase everything tied to one phone number (calls + texts, both directions):
@@ -298,8 +301,8 @@ curl -X POST http://localhost:3010/api/data-deletion \
 curl -X DELETE http://localhost:3010/api/calls/42
 ```
 
-Both are dashboard-side (tailnet-only) operator actions; transcript rows cascade
-with the call. Deletion is permanent — there is no soft-delete/undo.
+Both are dashboard-side (private-network-only) operator actions; transcript rows
+cascade with the call. Deletion is permanent; there is no soft-delete/undo.
 
 ---
 
