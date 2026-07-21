@@ -72,7 +72,7 @@ function runWhisper(wavPath: string, outPrefix: string): Promise<void> {
   })
 }
 
-function cleanTranscript(raw: string): string {
+export function cleanTranscript(raw: string): string {
   // whisper emits bracketed non-speech tokens like [BLANK_AUDIO], (wind blowing) — drop them.
   return raw
     .replace(/\[[^\]]*\]/g, " ")

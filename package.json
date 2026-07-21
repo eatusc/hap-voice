@@ -2,7 +2,7 @@
   "name": "hap-voice",
   "version": "0.1.0",
   "private": true,
-  "description": "AI voice receptionist for the HelpAProduct line — screens calls, takes messages, flags spam.",
+  "description": "AI voice receptionist for the HelpAProduct line: screens calls, takes messages, flags spam.",
   "scripts": {
     "dev": "tsx watch server.ts",
     "build": "next build",
@@ -10,7 +10,8 @@
     "db:setup": "tsx scripts/db-setup.ts",
     "db:seed": "tsx scripts/db-seed.ts",
     "test:retell": "tsx scripts/test-retell.ts",
-    "lint": "next lint",
+    "test": "vitest run",
+    "lint": "eslint .",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -23,15 +24,20 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/node": "^22.10.2",
     "@types/pg": "^8.11.10",
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",
     "@types/ws": "^8.5.13",
     "autoprefixer": "^10.4.20",
+    "eslint": "^10.7.0",
+    "globals": "^17.7.0",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.65.0",
+    "vitest": "^4.1.10"
   }
 }
