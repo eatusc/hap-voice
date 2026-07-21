@@ -6,7 +6,7 @@ const MULAW_CLIP = 32635
 
 /** Encode one 16-bit PCM sample to an 8-bit µ-law byte. */
 export function pcm16ToMulawSample(sample: number): number {
-  let sign = (sample >> 8) & 0x80
+  const sign = (sample >> 8) & 0x80
   if (sign !== 0) sample = -sample
   if (sample > MULAW_CLIP) sample = MULAW_CLIP
   sample += MULAW_BIAS
